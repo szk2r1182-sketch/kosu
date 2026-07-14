@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="工数打刻">
+<meta name="theme-color" content="#12161B">
+<title>工数タイムレコーダー</title>
+<!--
+  ver.1.2.1 (2026-07-14): 公開ホスティング対応のため初期PJ名を汎用化（実PJ名は設定画面から登録）
+-->
+<style>
+  :root{
+    --bg:#12161B;
+    --panel:#1B222A;
+    --panel-2:#232C36;
+    --line:#2E3944;
+    --txt:#E6EDF3;
+    --mute:#7D8894;
+    --amber:#FFB020;
+    --rec:#E5484D;
+    --ok:#3FB68B;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);color:var(--txt);font-family:var(--sans);
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) calc(env(safe-area-inset-bottom) + 88px) env(safe-area-inset-left);
+    min-height:100vh;font-size:15px;line-height:1.5;
+  }
+  .wrap{max-width:520px;margin:0 auto;padding:12px 14px 24px;}
+
+  /* ── 打刻機ヘッド ── */
+  .head{
+    background:linear-gradient(180deg,#232C36,#1A2129);
+    border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px 16px;position:relative;overflow:hidden;
+  }
+  .head::before{
+    content:"";position:absolute;inset:0 0 auto 0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(255,176,32,.5),transparent);
+  }
+  .clockrow{display:flex;align-items:baseline;justify-content:space-between;}
+  .clock{font-family:var(--mono);font-size:15px;color:var(--mute);letter-spacing:.04em;font-variant-numeric:tabular-nums;}
+  .badge{font-size:11px;color:var(--mute);letter-spacing:.12em;text-transform:uppercase;}
+
+  .display{
+    margin-top:10px;text-align:center;
+  }
+  .elapsed{
+    font-family:var(--mono);font-weight:600;
+    font-size:clamp(44px,15vw,62px);line-height:1.05;
+    color:var(--amber);font-variant-numeric:tabular-nums;
+    letter-spacing:.02em;
+    text-shadow:0 0 22px rgba(255,176,32,.28);
+  }
+  .elapsed.idle{color:#3D4855;text-shadow:none;}
+  .nowitem{
+    margin-top:4px;font-size:14px;color:var(--txt);min-height:22px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .nowitem .pj{color:var(--mute);}
+  .recdot{
+    display:inline-block;width:8px;height:8px;border-radius:50%;
+    background:var(--rec);margin-right:6px;vertical-align:middle;
+    animation:blink 1.4s ease-in-out infinite;
+  }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+  @media (prefers-reduced-motion:reduce){.recdot{animation:none}}
+
+  /* ── 大ボタン ── */
+  .bigbtn{
+    display:block;width:100%;margin-top:14px;
+    border:none;border-radius:12px;padding:16px;
+    font-size:17px;font-weight:700;letter-spacing:.06em;
+    font-family:var(--sans);cursor:pointer;
+  }
+  .bigbtn.stop{background:var(--rec);color:#fff;box-shadow:0 4px 0 #A6262A;}
+  .bigbtn.stop:active{transform:translateY(3px);box-shadow:0 1px 0 #A6262A;}
+
+  /* ── セクション ── */
+  h2{
+    font-size:11px;color:var(--mute);letter-spacing:.14em;
+    text-transform:uppercase;margin:22px 0 8px;font-weight:600;
+    display:flex;align-items:center;gap:8px;
+  }
+  h2::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  /* ── クイック打刻 ── */
+  .quick{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .qbtn{
+    background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:12px 12px;text-align:left;cursor:pointer;color:var(--txt);
+    font-family:var(--sans);min-height:62px;
+    display:flex;flex-direction:column;justify-content:center;gap:2px;
+  }
+  .qbtn:active{background:var(--panel-2);transform:scale(.98);}
+  .qbtn .cat{font-size:14px;font-weight:600;line-height:1.3;}
+  .qbtn .pj{font-size:11px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .qbtn.add{align-items:center;justify-content:center;color:var(--amber);border-style:dashed;font-size:22px;}
+
+  /* ── 実績リスト ── */
+  .entry{
+    display:flex;align-items:center;gap:10px;
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:10px 12px;margin-bottom:6px;
+  }
+  .entry .time{font-family:var(--mono);font-size:12px;color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .entry .body{flex:1;min-width:0;}
+  .entry .t1{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .entry .t2{font-size:11px;color:var(--mute);}
+  .entry .dur{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;}
+  .entry.sent{opacity:.55;}
+  .entry.sent .dur{color:var(--ok);}
+  .entry .del{
+    background:none;border:none;color:#4C5967;font-size:20px;padding:0 2px;cursor:pointer;line-height:1;
+  }
+  .vtag{
+    display:inline-block;font-size:10px;padding:1px 5px;border-radius:4px;margin-right:5px;
+    border:1px solid currentColor;
+  }
+  .v-add{color:var(--ok);}
+  .v-keep{color:#6E9CD2;}
+  .v-waste{color:#C97A9E;}
+
+  .empty{color:#4C5967;font-size:13px;text-align:center;padding:20px 0;}
+
+  /* ── 集計 ── */
+  .sum{display:flex;gap:6px;margin-top:10px;}
+  .sumcell{
+    flex:1;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:8px 6px;text-align:center;
+  }
+  .sumcell .k{font-size:10px;color:var(--mute);}
+  .sumcell .v{font-family:var(--mono);font-size:17px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums;}
+
+  /* ── 転送バー（固定） ── */
+  .dock{
+    position:fixed;left:0;right:0;bottom:0;
+    background:rgba(18,22,27,.92);backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+  }
+  .dock-inner{max-width:520px;margin:0 auto;display:flex;gap:8px;}
+  .send{
+    flex:1;background:var(--amber);color:#12161B;border:none;border-radius:11px;
+    padding:14px;font-size:15px;font-weight:700;font-family:var(--sans);cursor:pointer;
+  }
+  .send:disabled{background:#2E3944;color:#5A6673;}
+  .send:active:not(:disabled){transform:scale(.98);}
+  .icon-btn{
+    width:50px;background:var(--panel);border:1px solid var(--line);
+    border-radius:11px;color:var(--mute);font-size:18px;cursor:pointer;
+  }
+
+  /* ── シート ── */
+  .sheet{
+    position:fixed;inset:0;background:rgba(8,10,13,.7);
+    display:none;align-items:flex-end;z-index:50;
+  }
+  .sheet.on{display:flex;}
+  .sheet-in{
+    width:100%;max-height:88vh;overflow-y:auto;
+    background:var(--bg);border-top:1px solid var(--line);
+    border-radius:18px 18px 0 0;padding:16px 16px calc(24px + env(safe-area-inset-bottom));
+    max-width:520px;margin:0 auto;
+  }
+  .grip{width:36px;height:4px;border-radius:2px;background:#3A4653;margin:0 auto 14px;}
+  .sheet h3{margin:0 0 12px;font-size:16px;}
+  .opt{
+    display:block;width:100%;text-align:left;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:13px 14px;
+    color:var(--txt);font-size:15px;font-family:var(--sans);margin-bottom:6px;cursor:pointer;
+  }
+  .opt:active{background:var(--panel-2);}
+  .opt .sub{font-size:11px;color:var(--mute);margin-top:2px;}
+  .closebtn{
+    width:100%;background:none;border:1px solid var(--line);border-radius:10px;
+    padding:12px;color:var(--mute);font-size:14px;margin-top:8px;font-family:var(--sans);cursor:pointer;
+  }
+  input[type=text],select,input[type=datetime-local]{
+    width:100%;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:11px;color:var(--txt);font-size:15px;
+    font-family:var(--sans);margin-bottom:8px;
+  }
+  .row2{display:flex;gap:8px;}
+  .row2>*{flex:1;}
+  .mini{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+    color:var(--txt);padding:9px 12px;font-size:13px;font-family:var(--sans);cursor:pointer;
+  }
+  .mini.pri{background:var(--amber);color:#12161B;border-color:var(--amber);font-weight:700;}
+  .mini.dan{color:var(--rec);}
+  .listrow{
+    display:flex;align-items:center;gap:8px;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:5px;
+  }
+  .listrow .nm{flex:1;font-size:14px;}
+  .note{font-size:12px;color:var(--mute);line-height:1.6;margin:10px 0;}
+
+  .toast{
+    position:fixed;left:50%;bottom:104px;transform:translateX(-50%);
+    background:var(--panel-2);border:1px solid var(--line);color:var(--txt);
+    padding:10px 18px;border-radius:20px;font-size:13px;z-index:99;
+    opacity:0;transition:opacity .25s;pointer-events:none;
+  }
+  .toast.on{opacity:1;}
+  .ver{text-align:center;color:#39434E;font-size:11px;font-family:var(--mono);margin-top:20px;}
+  .warn{
+    background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.4);
+    border-radius:10px;padding:10px 12px;margin-bottom:12px;
+    font-size:12px;line-height:1.6;color:#F0B4B6;
+  }
+  .warn b{color:#FF9A9D;}
+  :focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="warn"></div>
+
+  <div class="head">
+    <div class="clockrow">
+      <span class="clock" id="clock">--:--:--</span>
+      <span class="badge" id="state">待機中</span>
+    </div>
+    <div class="display">
+      <div class="elapsed idle" id="elapsed">0:00:00</div>
+      <div class="nowitem" id="nowitem">項目を選んで打刻を開始</div>
+    </div>
+    <button class="bigbtn stop" id="stopBtn" style="display:none">■ ストップ</button>
+  </div>
+
+  <h2>クイック打刻</h2>
+  <div class="quick" id="quick"></div>
+
+  <h2>今日の実績</h2>
+  <div id="entries"></div>
+  <div class="sum" id="sum"></div>
+
+  <div class="ver">ver.1.2.1</div>
+</div>
+
+<div class="dock">
+  <div class="dock-inner">
+    <button class="send" id="sendBtn" disabled>カレンダーに追加</button>
+    <button class="icon-btn" id="csvBtn" title="CSV出力">⤓</button>
+    <button class="icon-btn" id="cfgBtn" title="設定">⚙</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheet"><div class="sheet-in" id="sheetIn"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════ ストレージ ═══════ */
+const KEY='kosu_v1';
+let mem=null;
+function load(){
+  try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}
+  return mem||null;
+}
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){mem=JSON.parse(JSON.stringify(S));}
+}
+
+/* ═══════ 初期データ ═══════ */
+const DEFAULT={
+  projects:['プロジェクトA','部内定常業務','その他'],
+  cats:[
+    {n:'会議・打合せ',v:'keep'},
+    {n:'資料作成',v:'keep'},
+    {n:'設計・検討',v:'add'},
+    {n:'現場立会・確認',v:'add'},
+    {n:'実験・評価',v:'add'},
+    {n:'折衝・調整',v:'keep'},
+    {n:'メール・事務処理',v:'keep'},
+    {n:'手戻り・待ち',v:'waste'},
+    {n:'移動',v:'waste'}
+  ],
+  entries:[],
+  running:null,
+  mode:'ics'
+};
+let S=load()||JSON.parse(JSON.stringify(DEFAULT));
+if(!S.projects) S=JSON.parse(JSON.stringify(DEFAULT));
+if(!S.mode) S.mode='ics';
+
+const VLABEL={add:'付加価値',keep:'維持管理',waste:'ムダ'};
+const VCLASS={add:'v-add',keep:'v-keep',waste:'v-waste'};
+
+/* ═══════ ユーティリティ ═══════ */
+const pad=n=>String(n).padStart(2,'0');
+const hm=t=>{const d=new Date(t);return pad(d.getHours())+':'+pad(d.getMinutes());};
+const dkey=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+function dur(ms){
+  const s=Math.floor(ms/1000);
+  return Math.floor(s/3600)+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60);
+}
+function hhmm(ms){
+  const m=Math.round(ms/60000);
+  return Math.floor(m/60)+'h'+pad(m%60);
+}
+function catOf(name){return S.cats.find(c=>c.n===name)||{n:name,v:'keep'};}
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('on');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),1900);
+}
+
+/* ═══════ 時計・タイマー ═══════ */
+setInterval(()=>{
+  const d=new Date();
+  document.getElementById('clock').textContent=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+  if(S.running){
+    document.getElementById('elapsed').textContent=dur(Date.now()-S.running.start);
+  }
+},1000);
+
+/* ═══════ 描画 ═══════ */
+function render(){
+  const el=document.getElementById('elapsed');
+  const ni=document.getElementById('nowitem');
+  const st=document.getElementById('state');
+  const sb=document.getElementById('stopBtn');
+
+  if(S.running){
+    el.classList.remove('idle');
+    el.textContent=dur(Date.now()-S.running.start);
+    ni.innerHTML='<span class="recdot"></span>'+esc(S.running.cat)+' <span class="pj">／ '+esc(S.running.pj)+'</span>';
+    st.textContent='計測中';st.style.color='var(--rec)';
+    sb.style.display='block';
+  }else{
+    el.classList.add('idle');el.textContent='0:00:00';
+    ni.textContent='項目を選んで打刻を開始';
+    st.textContent='待機中';st.style.color='';
+    sb.style.display='none';
+  }
+
+  // クイックボタン（使用頻度順 上位5件）
+  const freq={};
+  S.entries.slice(-60).forEach(e=>{const k=e.pj+'\u0001'+e.cat;freq[k]=(freq[k]||0)+1;});
+  let keys=Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,5);
+  if(keys.length===0){
+    keys=[S.projects[0]+'\u0001'+S.cats[0].n, S.projects[0]+'\u0001'+S.cats[2].n];
+  }
+  const q=document.getElementById('quick');
+  q.innerHTML='';
+  keys.forEach(k=>{
+    const [pj,cat]=k.split('\u0001');
+    const b=document.createElement('button');
+    b.className='qbtn';
+    b.innerHTML='<span class="cat">'+esc(cat)+'</span><span class="pj">'+esc(pj)+'</span>';
+    b.onclick=()=>start(pj,cat);
+    q.appendChild(b);
+  });
+  const add=document.createElement('button');
+  add.className='qbtn add';add.textContent='＋';
+  add.setAttribute('aria-label','項目を選んで開始');
+  add.onclick=pickProject;
+  q.appendChild(add);
+
+  // 今日の実績
+  const today=dkey(Date.now());
+  const list=S.entries.filter(e=>dkey(e.start)===today).sort((a,b)=>b.start-a.start);
+  const box=document.getElementById('entries');
+  box.innerHTML='';
+  if(list.length===0){
+    box.innerHTML='<div class="empty">まだ記録がありません</div>';
+  }
+  list.forEach(e=>{
+    const c=catOf(e.cat);
+    const d=document.createElement('div');
+    d.className='entry'+(e.sent?' sent':'');
+    d.innerHTML=
+      '<span class="time">'+hm(e.start)+'<br>'+hm(e.end)+'</span>'+
+      '<span class="body"><span class="t1">'+esc(e.cat)+'</span>'+
+      '<span class="t2"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+esc(e.pj)+(e.sent?' ・転送済':'')+'</span></span>'+
+      '<span class="dur">'+hhmm(e.end-e.start)+'</span>';
+    let snd=null;
+    if(!e.sent){
+      snd=document.createElement('button');
+      snd.className='del';snd.textContent='↥';snd.style.color='var(--amber)';
+      snd.setAttribute('aria-label','この記録だけカレンダーに追加');
+      snd.onclick=()=>sendOne(e.id);
+      d.appendChild(snd);
+    }
+    const del=document.createElement('button');
+    del.className='del';del.textContent='×';del.setAttribute('aria-label','削除');
+    del.onclick=()=>{ if(confirm('この記録を削除しますか？')){S.entries=S.entries.filter(x=>x.id!==e.id);save();render();} };
+    d.appendChild(del);
+    d.onclick=ev=>{ if(ev.target!==del && ev.target!==snd) editEntry(e.id); };
+    box.appendChild(d);
+  });
+
+  // 集計
+  const tot={add:0,keep:0,waste:0};
+  list.forEach(e=>{tot[catOf(e.cat).v]+=e.end-e.start;});
+  const all=tot.add+tot.keep+tot.waste;
+  const rate=all>0?Math.round(tot.add/all*100):0;
+  document.getElementById('sum').innerHTML=
+    cell('合計',hhmm(all))+
+    cell('付加価値',hhmm(tot.add))+
+    cell('維持管理',hhmm(tot.keep))+
+    cell('ムダ',hhmm(tot.waste))+
+    cell('VH率',rate+'%');
+
+  // 転送ボタン
+  const un=S.entries.filter(e=>!e.sent).length;
+  const sbn=document.getElementById('sendBtn');
+  sbn.disabled=un===0;
+  const dest=S.mode==='outlook'?'Outlookへ追加':'カレンダーに追加';
+  sbn.textContent=un===0?dest:dest+'（'+un+'件）';
+
+  showWarn();
+  save();
+}
+function cell(k,v){return '<div class="sumcell"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+/* ═══════ 打刻 ═══════ */
+function start(pj,cat){
+  if(S.running){ if(!confirm('計測中の「'+S.running.cat+'」を終了して切り替えますか？')) return; stop(true); }
+  S.running={pj,cat,start:Date.now()};
+  save();render();
+  if(navigator.vibrate) navigator.vibrate(12);
+  toast('▶ '+cat+' 開始');
+}
+function stop(silent){
+  if(!S.running) return;
+  const r=S.running,end=Date.now();
+  if(end-r.start>=30000){
+    S.entries.push({id:'e'+end+Math.random().toString(36).slice(2,6),pj:r.pj,cat:r.cat,start:r.start,end,sent:false});
+  }else if(!silent){
+    toast('30秒未満のため記録しません');
+  }
+  S.running=null;save();render();
+  if(navigator.vibrate) navigator.vibrate([12,60,12]);
+  if(!silent) toast('■ 記録しました');
+}
+document.getElementById('stopBtn').onclick=()=>stop(false);
+
+/* ═══════ シート ═══════ */
+const sheet=document.getElementById('sheet'),sheetIn=document.getElementById('sheetIn');
+function openSheet(html){sheetIn.innerHTML='<div class="grip"></div>'+html;sheet.classList.add('on');}
+function closeSheet(){sheet.classList.remove('on');}
+sheet.onclick=e=>{if(e.target===sheet)closeSheet();};
+
+function pickProject(){
+  let h='<h3>PJを選択</h3>';
+  S.projects.forEach((p,i)=>h+='<button class="opt" onclick="pickCat('+i+')">'+esc(p)+'</button>');
+  h+='<button class="closebtn" onclick="closeSheet()">キャンセル</button>';
+  openSheet(h);
+}
+function pickCat(pi){
+  const pj=S.projects[pi];
+  let h='<h3>'+esc(pj)+'</h3>';
+  S.cats.forEach((c,i)=>h+='<button class="opt" onclick="startFrom('+pi+','+i+')">'+esc(c.n)+
+    '<div class="sub"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span></div></button>');
+  h+='<button class="closebtn" onclick="pickProject()">戻る</button>';
+  openSheet(h);
+}
+function startFrom(pi,ci){closeSheet();start(S.projects[pi],S.cats[ci].n);}
+
+/* ═══════ 実績の編集 ═══════ */
+function editEntry(id){
+  const e=S.entries.find(x=>x.id===id);if(!e)return;
+  const iso=t=>{const d=new Date(t-d0(t));return new Date(t-new Date(t).getTimezoneOffset()*60000).toISOString().slice(0,16);};
+  function d0(){return 0;}
+  let h='<h3>記録を修正</h3>';
+  h+='<select id="ePj">'+S.projects.map(p=>'<option'+(p===e.pj?' selected':'')+'>'+esc(p)+'</option>').join('')+'</select>';
+  h+='<select id="eCat">'+S.cats.map(c=>'<option'+(c.n===e.cat?' selected':'')+'>'+esc(c.n)+'</option>').join('')+'</select>';
+  h+='<div class="row2"><input type="datetime-local" id="eS" value="'+iso(e.start)+'"><input type="datetime-local" id="eE" value="'+iso(e.end)+'"></div>';
+  if(e.sent) h+='<div class="note">この記録は転送済みです。修正すると未転送に戻り、再度カレンダーに追加できます（重複にご注意ください）。</div>';
+  h+='<div class="row2"><button class="mini" onclick="closeSheet()">キャンセル</button><button class="mini pri" onclick="saveEntry(\''+id+'\')">保存</button></div>';
+  openSheet(h);
+}
+function saveEntry(id){
+  const e=S.entries.find(x=>x.id===id);if(!e)return;
+  const s=new Date(document.getElementById('eS').value).getTime();
+  const en=new Date(document.getElementById('eE').value).getTime();
+  if(isNaN(s)||isNaN(en)||en<=s){toast('時刻が不正です');return;}
+  e.pj=document.getElementById('ePj').value;
+  e.cat=document.getElementById('eCat').value;
+  e.start=s;e.end=en;e.sent=false;
+  closeSheet();save();render();toast('修正しました');
+}
+
+/* ═══════ カレンダー転送（.ics） ═══════ */
+function icsTime(t){
+  const d=new Date(t);
+  return d.getUTCFullYear()+pad(d.getUTCMonth()+1)+pad(d.getUTCDate())+'T'+
+         pad(d.getUTCHours())+pad(d.getUTCMinutes())+pad(d.getUTCSeconds())+'Z';
+}
+function fold(s){ // RFC5545 75オクテット折返し（簡易）
+  return s.length<=74?s:s.match(/.{1,74}/g).join('\r\n ');
+}
+function buildIcs(list){
+  let ics='BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//kosu-timecard//JP\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n';
+  list.forEach(e=>{
+    const c=catOf(e.cat);
+    ics+='BEGIN:VEVENT\r\n'
+      +'UID:'+e.id+'@kosu-timecard\r\n'
+      +'DTSTAMP:'+icsTime(Date.now())+'\r\n'
+      +'DTSTART:'+icsTime(e.start)+'\r\n'
+      +'DTEND:'+icsTime(e.end)+'\r\n'
+      +fold('SUMMARY:【'+e.pj+'】'+e.cat)+'\r\n'
+      +fold('DESCRIPTION:価値区分: '+VLABEL[c.v]+'\\n工数: '+hhmm(e.end-e.start)+'\\n(工数タイムレコーダーより登録)')+'\r\n'
+      +'CATEGORIES:'+VLABEL[c.v]+'\r\n'
+      +'TRANSP:OPAQUE\r\n'
+      +'END:VEVENT\r\n';
+  });
+  return ics+'END:VCALENDAR\r\n';
+}
+
+/* 環境判定 */
+const CAN_SHARE=(()=>{ try{ return !!(navigator.canShare && navigator.canShare({files:[new File([''],'t.ics',{type:'text/calendar'})]})); }catch(e){ return false; } })();
+function showWarn(){
+  const w=document.getElementById('warn');
+  if(S.mode==='outlook' || CAN_SHARE){ w.innerHTML=''; return; }
+  w.innerHTML='<div class="warn"><b>この環境ではカレンダー転送できません。</b><br>'+
+    'アプリ内ブラウザやプレビューでは共有シートがブロックされます。<b>Safariで開き直す</b>か、'+
+    '設定（⚙）で転送方法を<b>「Outlook直リンク」</b>に切り替えてください。</div>';
+}
+
+/* ── 方式A: .ics を共有シートで標準カレンダーへ ── */
+async function shareIcs(list){
+  if(!CAN_SHARE){
+    toast('この環境では共有できません。設定を確認してください');
+    return false;
+  }
+  const ics=buildIcs(list);
+  const name='kosu_'+dkey(Date.now())+'.ics';
+  const file=new File([ics],name,{type:'text/calendar'});
+  try{
+    await navigator.share({files:[file]});
+    return true;
+  }catch(err){
+    if(err && err.name==='AbortError'){ toast('キャンセルしました'); return false; }
+    toast('共有に失敗しました（'+((err&&err.name)||'不明')+'）');
+    return false;
+  }
+}
+
+/* ── 方式B: Outlook Web の予定作成画面を直接開く ── */
+function tzOffset(t){
+  const o=-new Date(t).getTimezoneOffset();
+  return (o>=0?'+':'-')+pad(Math.floor(Math.abs(o)/60))+':'+pad(Math.abs(o)%60);
+}
+function localIso(t){
+  const d=new Date(t);
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+
+         pad(d.getHours())+':'+pad(d.getMinutes())+':00'+tzOffset(t);
+}
+function outlookUrl(e){
+  const c=catOf(e.cat);
+  const p=new URLSearchParams({
+    path:'/calendar/action/compose',
+    rru:'addevent',
+    subject:'【'+e.pj+'】'+e.cat,
+    startdt:localIso(e.start),
+    enddt:localIso(e.end),
+    body:'価値区分: '+VLABEL[c.v]+' / 工数: '+hhmm(e.end-e.start)
+  });
+  return 'https://outlook.office.com/calendar/0/deeplink/compose?'+p.toString();
+}
+
+/* ── 転送の入口 ── */
+async function sendToCalendar(list){
+  if(list.length===0) return;
+  if(S.mode==='outlook'){
+    const e=list.slice().sort((a,b)=>a.start-b.start)[0];
+    const rest=list.length-1;
+    e.sent=true;save();render();
+    if(rest>0) toast('残り'+rest+'件。戻ってもう一度押してください');
+    location.href=outlookUrl(e);
+    return;
+  }
+  const ok=await shareIcs(list);
+  if(!ok){ render(); return; }
+  list.forEach(e=>e.sent=true);
+  save();render();
+  toast(list.length+'件をカレンダーへ送りました');
+}
+document.getElementById('sendBtn').onclick=()=>sendToCalendar(S.entries.filter(e=>!e.sent));
+function sendOne(id){
+  const e=S.entries.find(x=>x.id===id);
+  if(e) sendToCalendar([e]);
+}
+function downloadBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+
+/* ═══════ CSV ═══════ */
+document.getElementById('csvBtn').onclick=()=>{
+  if(S.entries.length===0){toast('記録がありません');return;}
+  let csv='\ufeff日付,開始,終了,分,PJ,業務分類,価値区分\r\n';
+  S.entries.slice().sort((a,b)=>a.start-b.start).forEach(e=>{
+    csv+=[dkey(e.start),hm(e.start),hm(e.end),Math.round((e.end-e.start)/60000),
+          '"'+e.pj+'"','"'+e.cat+'"',VLABEL[catOf(e.cat).v]].join(',')+'\r\n';
+  });
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='kosu_'+dkey(Date.now())+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  toast('CSVを書き出しました');
+};
+
+/* ═══════ 設定 ═══════ */
+document.getElementById('cfgBtn').onclick=cfgOpen;
+function cfgOpen(){
+  let h='<h3>設定</h3>';
+
+  h+='<h2 style="margin-top:4px">カレンダー転送方法</h2>';
+  h+='<button class="opt" onclick="setMode(\'ics\')" style="border-color:'+(S.mode==='ics'?'var(--amber)':'var(--line)')+'">'+
+     (S.mode==='ics'?'● ':'○ ')+'標準カレンダー（共有シート）'+
+     '<div class="sub">まとめて一括追加できる。Safariで開いた時のみ動作。<br>現在の環境: '+(CAN_SHARE?'<span style="color:var(--ok)">利用可</span>':'<span style="color:var(--rec)">利用不可</span>')+'</div></button>';
+  h+='<button class="opt" onclick="setMode(\'outlook\')" style="border-color:'+(S.mode==='outlook'?'var(--amber)':'var(--line)')+'">'+
+     (S.mode==='outlook'?'● ':'○ ')+'Outlook直リンク'+
+     '<div class="sub">Outlookの予定作成画面が開く。1件ずつだが、どの環境でも確実に動く。</div></button>';
+
+  h+='<h2>PJ一覧</h2>';
+  S.projects.forEach((p,i)=>{
+    h+='<div class="listrow"><span class="nm">'+esc(p)+'</span>'+
+       '<button class="mini dan" onclick="delPj('+i+')">削除</button></div>';
+  });
+  h+='<div class="row2"><input type="text" id="newPj" placeholder="PJ名を追加"><button class="mini pri" onclick="addPj()">追加</button></div>';
+
+  h+='<h2>業務分類</h2>';
+  S.cats.forEach((c,i)=>{
+    h+='<div class="listrow"><span class="nm">'+esc(c.n)+'</span>'+
+       '<select onchange="setV('+i+',this.value)" style="width:auto;margin:0;padding:6px 8px;font-size:12px">'+
+       ['add','keep','waste'].map(v=>'<option value="'+v+'"'+(c.v===v?' selected':'')+'>'+VLABEL[v]+'</option>').join('')+
+       '</select><button class="mini dan" onclick="delCat('+i+')">削除</button></div>';
+  });
+  h+='<div class="row2"><input type="text" id="newCat" placeholder="業務分類を追加"><button class="mini pri" onclick="addCat()">追加</button></div>';
+
+  h+='<div class="note">価値区分は分類ごとに固定されるため、打刻時の入力は不要です。付加価値時間の比率（VH率）が自動集計されます。</div>';
+  h+='<button class="closebtn" onclick="closeSheet()">閉じる</button>';
+  openSheet(h);
+}
+function setMode(m){S.mode=m;save();cfgOpen();render();}
+function addPj(){const v=document.getElementById('newPj').value.trim();if(!v)return;S.projects.push(v);save();cfgOpen();render();}
+function delPj(i){if(S.projects.length<=1)return;S.projects.splice(i,1);save();cfgOpen();render();}
+function addCat(){const v=document.getElementById('newCat').value.trim();if(!v)return;S.cats.push({n:v,v:'keep'});save();cfgOpen();render();}
+function delCat(i){if(S.cats.length<=1)return;S.cats.splice(i,1);save();cfgOpen();render();}
+function setV(i,v){S.cats[i].v=v;save();cfgOpen();render();}
+
+render();
+</script>
+</body>
+</html>
