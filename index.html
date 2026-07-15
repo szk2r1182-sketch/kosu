@@ -9,6 +9,12 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
+  ver.1.4.0 (2026-07-15):
+  - ストップ後に確認シート（修正／Outlookへ送信／あとで送る）を表示。ストップ＝送信を1動線に
+  - 一括送信ボタンを廃止（ドックは月次分析・設定のみに）
+  - 修正→確認へ戻れる導線を追加
+-->
+<!--
   ver.1.3.3 (2026-07-15): 転送方法をOutlook直リンクに固定し、設定画面から不要な転送方法選択UIを削除
 -->
 <!--
@@ -195,6 +201,12 @@
     display:flex;align-items:center;justify-content:center;
   }
   .icon-btn:active{background:var(--panel-2);}
+  .dockbtn{
+    flex:1;background:var(--panel);border:1px solid var(--line);color:var(--txt);
+    border-radius:13px;padding:17px;font-size:16px;font-weight:600;
+    font-family:var(--sans);cursor:pointer;
+  }
+  .dockbtn:active{background:var(--panel-2);}
 
   /* ── シート ── */
   .sheet{
@@ -210,6 +222,14 @@
   }
   .grip{width:36px;height:4px;border-radius:2px;background:#3A4653;margin:0 auto 14px;}
   .sheet h3{margin:0 0 12px;font-size:16px;}
+  .confirm-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px;text-align:center;
+  }
+  .confirm-card .cc-pj{font-size:14px;color:var(--mute);margin-bottom:4px;}
+  .confirm-card .cc-cat{font-size:19px;font-weight:700;margin-bottom:10px;}
+  .confirm-card .cc-time{font-family:var(--mono);font-size:15px;color:var(--txt);}
+  .confirm-card .cc-time b{color:var(--amber);}
   .opt{
     display:block;width:100%;text-align:left;background:var(--panel);
     border:1px solid var(--line);border-radius:12px;padding:16px;
@@ -285,16 +305,12 @@
   <div id="entries"></div>
   <div class="sum" id="sum"></div>
 
-  <div class="ver">ver.1.3.3</div>
+  <div class="ver">ver.1.4.0</div>
 </div>
 
 <div class="dock">
   <div class="dock-inner">
-    <button class="send" id="sendBtn" disabled>
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>
-      <span id="sendLabel">Outlookへ追加</span>
-    </button>
-    <button class="icon-btn" id="monthBtn" title="月次出力・分析">📊</button>
+    <button class="dockbtn" id="monthBtn">📊　月次分析・出力</button>
     <button class="icon-btn" id="cfgBtn" title="設定">⚙</button>
   </div>
 </div>
@@ -473,14 +489,6 @@ function render(){
     cell('ムダ',hhmm(tot.waste))+
     cell('VH率',rate+'%');
 
-  // 転送ボタン
-  const un=S.entries.filter(e=>!e.sent).length;
-  const sbn=document.getElementById('sendBtn');
-  sbn.disabled=un===0;
-  const dest=S.mode==='outlook'?'Outlookへ追加':'カレンダーに追加';
-  document.getElementById('sendLabel').textContent=un===0?dest:dest+'（'+un+'件）';
-
-  showWarn();
   save();
 }
 function cell(k,v){return '<div class="sumcell"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';}
@@ -507,16 +515,43 @@ function start(pj,cat){
 function stop(silent){
   if(!S.running) return;
   const r=S.running,end=Date.now();
+  let newId=null;
   if(end-r.start>=30000){
-    S.entries.push({id:'e'+end+Math.random().toString(36).slice(2,6),pj:r.pj,cat:r.cat,start:r.start,end,sent:false});
+    newId='e'+end+Math.random().toString(36).slice(2,6);
+    S.entries.push({id:newId,pj:r.pj,cat:r.cat,start:r.start,end,sent:false});
   }else if(!silent){
     toast('30秒未満のため記録しません');
   }
   S.running=null;save();render();
   if(navigator.vibrate) navigator.vibrate([12,60,12]);
-  if(!silent) toast('■ 記録しました');
+  // 切替(silent)でなく、記録できたときは確認シートを出す
+  if(!silent && newId){ confirmSheet(newId); }
 }
 document.getElementById('stopBtn').onclick=()=>stop(false);
+
+/* ストップ直後の確認シート（修正 or Outlookへ送信） */
+function confirmSheet(id){
+  const e=S.entries.find(x=>x.id===id);
+  if(!e) return;
+  const c=catOf(e.cat);
+  let h='<h3>この内容で記録します</h3>';
+  h+='<div class="confirm-card">'+
+     '<div class="cc-pj">'+esc(e.pj)+'</div>'+
+     '<div class="cc-cat"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+esc(e.cat)+'</div>'+
+     '<div class="cc-time">'+hm(e.start)+' → '+hm(e.end)+' 　<b>'+hhmm(e.end-e.start)+'</b></div>'+
+     '</div>';
+  h+='<button class="closebtn done" style="margin-top:14px" onclick="sendFromConfirm(\''+id+'\')">Outlookへ送信 →</button>';
+  h+='<div class="row2" style="margin-top:8px">'+
+     '<button class="mini" onclick="editEntry(\''+id+'\',true)">修正する</button>'+
+     '<button class="mini" onclick="closeSheet()">あとで送る</button></div>';
+  openSheet(h);
+}
+function sendFromConfirm(id){
+  const e=S.entries.find(x=>x.id===id);
+  if(!e) return;
+  closeSheet();
+  sendToCalendar([e]);
+}
 
 /* ═══════ シート ═══════ */
 const sheet=document.getElementById('sheet'),sheetIn=document.getElementById('sheetIn');
@@ -541,7 +576,7 @@ function pickCat(pi){
 function startFrom(pi,ci){closeSheet();start(S.projects[pi],S.cats[ci].n);}
 
 /* ═══════ 実績の編集 ═══════ */
-function editEntry(id){
+function editEntry(id,fromConfirm){
   const e=S.entries.find(x=>x.id===id);if(!e)return;
   const iso=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());};
   let h='<h3>記録を修正</h3>';
@@ -549,10 +584,12 @@ function editEntry(id){
   h+='<select id="eCat">'+S.cats.map(c=>'<option'+(c.n===e.cat?' selected':'')+'>'+esc(c.n)+'</option>').join('')+'</select>';
   h+='<div class="row2"><input type="datetime-local" id="eS" value="'+iso(e.start)+'"><input type="datetime-local" id="eE" value="'+iso(e.end)+'"></div>';
   if(e.sent) h+='<div class="note">この記録は転送済みです。修正すると未転送に戻り、再度カレンダーに追加できます（重複にご注意ください）。</div>';
-  h+='<div class="row2"><button class="mini" onclick="closeSheet()">キャンセル</button><button class="mini pri" onclick="saveEntry(\''+id+'\')">保存</button></div>';
+  const backArg=fromConfirm?',true':'';
+  h+='<div class="row2"><button class="mini" onclick="'+(fromConfirm?'confirmSheet(\''+id+'\')':'closeSheet()')+'">戻る</button>'+
+     '<button class="mini pri" onclick="saveEntry(\''+id+'\''+backArg+')">保存</button></div>';
   openSheet(h);
 }
-function saveEntry(id){
+function saveEntry(id,fromConfirm){
   const e=S.entries.find(x=>x.id===id);if(!e)return;
   const s=new Date(document.getElementById('eS').value).getTime();
   const en=new Date(document.getElementById('eE').value).getTime();
@@ -560,7 +597,8 @@ function saveEntry(id){
   e.pj=document.getElementById('ePj').value;
   e.cat=document.getElementById('eCat').value;
   e.start=s;e.end=en;e.sent=false;
-  closeSheet();save();render();toast('修正しました');
+  save();render();toast('修正しました');
+  if(fromConfirm){ confirmSheet(id); } else { closeSheet(); }
 }
 
 /* ═══════ カレンダー転送（.ics） ═══════ */
@@ -675,7 +713,6 @@ async function sendToCalendar(list){
   save();render();
   toast(list.length+'件をカレンダーへ送りました');
 }
-document.getElementById('sendBtn').onclick=()=>sendToCalendar(S.entries.filter(e=>!e.sent));
 function sendOne(id){
   const e=S.entries.find(x=>x.id===id);
   if(e) sendToCalendar([e]);
