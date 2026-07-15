@@ -9,6 +9,15 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
+  ver.1.5.1 (2026-07-15): 初期PJ一覧を「共通/量産・プロジェクトA・プロジェクトB」に変更
+-->
+<!--
+  ver.1.5.0 (2026-07-15):
+  - ストップ忘れ防止機能を追加。計測がしきい値(既定60分)を超えると、計測数字が警告色になり「まだ計測中」バナー＋バイブで通知
+  - アプリを開いた/前面に戻した時に長時間計測を検知し、警告シート（今すぐストップ／別の時刻でストップ／継続）を表示
+  - 設定でしきい値(30〜180分)を変更可能
+-->
+<!--
   ver.1.4.0 (2026-07-15):
   - ストップ後に確認シート（修正／Outlookへ送信／あとで送る）を表示。ストップ＝送信を1動線に
   - 一括送信ボタンを廃止（ドックは月次分析・設定のみに）
@@ -77,6 +86,14 @@
     text-shadow:0 0 22px rgba(255,176,32,.28);
   }
   .elapsed.idle{color:#3D4855;text-shadow:none;}
+  .elapsed.over{color:var(--rec);text-shadow:0 0 22px rgba(229,72,77,.35);}
+  .runbanner{
+    display:flex;align-items:center;gap:8px;
+    margin-top:12px;padding:10px 12px;border-radius:10px;
+    background:rgba(229,72,77,.14);border:1px solid rgba(229,72,77,.5);
+    color:#F0B4B6;font-size:13px;line-height:1.4;
+  }
+  .runbanner .rb-icon{font-size:15px;flex:0 0 auto;}
   .nowitem{
     margin-top:4px;font-size:14px;color:var(--txt);min-height:22px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -295,6 +312,9 @@
       <div class="elapsed idle" id="elapsed">0:00:00</div>
       <div class="nowitem" id="nowitem">項目を選んで打刻を開始</div>
     </div>
+    <div class="runbanner" id="runBanner" style="display:none">
+      <span class="rb-icon">⚠</span><span class="rb-txt"></span>
+    </div>
     <button class="bigbtn stop" id="stopBtn" style="display:none">■ ストップ</button>
   </div>
 
@@ -305,7 +325,7 @@
   <div id="entries"></div>
   <div class="sum" id="sum"></div>
 
-  <div class="ver">ver.1.4.0</div>
+  <div class="ver">ver.1.5.1</div>
 </div>
 
 <div class="dock">
@@ -332,7 +352,7 @@ function save(){
 
 /* ═══════ 初期データ ═══════ */
 const DEFAULT={
-  projects:['プロジェクトA','部内定常業務','その他'],
+  projects:['共通/量産','プロジェクトA','プロジェクトB'],
   cats:[
     {n:'会議・打合せ',v:'keep'},
     {n:'資料作成',v:'keep'},
@@ -347,13 +367,15 @@ const DEFAULT={
   entries:[],
   running:null,
   mode:'ics',
-  favs:[]
+  favs:[],
+  alertMin:60
 };
 let S=load()||JSON.parse(JSON.stringify(DEFAULT));
 if(!S.projects) S=JSON.parse(JSON.stringify(DEFAULT));
 if(!S.mode) S.mode='outlook';
 S.mode='outlook'; // 転送はOutlook直リンクに固定（標準カレンダー方式は廃止）
 if(!S.favs) S.favs=[];
+if(typeof S.alertMin!=='number') S.alertMin=60;
 
 const VLABEL={add:'付加価値',keep:'維持管理',waste:'ムダ'};
 const VCLASS={add:'v-add',keep:'v-keep',waste:'v-waste'};
@@ -378,13 +400,99 @@ function toast(msg){
 }
 
 /* ═══════ 時計・タイマー ═══════ */
+let _alerted=false; // この計測で警告済みか
 setInterval(()=>{
   const d=new Date();
   document.getElementById('clock').textContent=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
   if(S.running){
-    document.getElementById('elapsed').textContent=dur(Date.now()-S.running.start);
+    const ms=Date.now()-S.running.start;
+    const el=document.getElementById('elapsed');
+    el.textContent=dur(ms);
+    // 長時間計測の検知
+    const overMs=(S.alertMin||60)*60000;
+    if(ms>=overMs){
+      el.classList.add('over');          // 数字を警告色に
+      showRunBanner(true);               // 「まだ計測中」バナー
+      if(!_alerted){                     // 初回だけバイブ
+        _alerted=true;
+        if(navigator.vibrate) navigator.vibrate([80,60,80,60,80]);
+      }
+    }else{
+      el.classList.remove('over');
+      showRunBanner(false);
+    }
   }
 },1000);
+
+// 「まだ計測中」バナーの表示切替
+function showRunBanner(on){
+  const b=document.getElementById('runBanner');
+  if(!b) return;
+  if(on && S.running){
+    const mins=Math.floor((Date.now()-S.running.start)/60000);
+    b.querySelector('.rb-txt').textContent='計測が'+mins+'分続いています。ストップ忘れに注意';
+    b.style.display='flex';
+  }else{
+    b.style.display='none';
+  }
+}
+
+/* アプリを開いた/前面に戻した時の長時間チェック（主軸：確実に動く） */
+function checkStaleOnResume(){
+  if(!S.running) return;
+  const ms=Date.now()-S.running.start;
+  const overMs=(S.alertMin||60)*60000;
+  if(ms>=overMs){
+    staleSheet();
+  }
+}
+function staleSheet(){
+  if(!S.running) return;
+  const r=S.running;
+  const mins=Math.floor((Date.now()-r.start)/60000);
+  const h=Math.floor(mins/60), m=mins%60;
+  const dispDur=(h>0?h+'時間':'')+m+'分';
+  let html='<h3>⚠ 長時間の計測が続いています</h3>';
+  html+='<div class="confirm-card" style="border-color:var(--rec)">'+
+     '<div class="cc-cat" style="color:var(--rec)">'+dispDur+' 計測中</div>'+
+     '<div class="cc-pj">'+esc(r.cat)+' ／ '+esc(r.pj)+'</div>'+
+     '<div class="cc-time">開始 '+hm(r.start)+'</div>'+
+     '</div>';
+  html+='<button class="closebtn done" style="margin-top:14px" onclick="stopNow()">今すぐストップする</button>';
+  html+='<button class="closebtn" onclick="stopAtTime()">別の時刻でストップ（止め忘れ）</button>';
+  html+='<button class="closebtn" onclick="closeSheet()">まだ続けている</button>';
+  openSheet(html);
+}
+// 今すぐストップ（通常のストップと同じ→確認シートへ）
+function stopNow(){ closeSheet(); stop(false); }
+// 実際に終わった時刻を入れて締める
+function stopAtTime(){
+  if(!S.running){ closeSheet(); return; }
+  const r=S.running;
+  const iso=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());};
+  let html='<h3>終了時刻を入力</h3>';
+  html+='<div class="note">実際に作業を終えた時刻を入れてください。その時刻で記録します。</div>';
+  html+='<div class="note">開始: '+hm(r.start)+'</div>';
+  html+='<input type="datetime-local" id="stEnd" value="'+iso(Date.now())+'">';
+  html+='<div class="row2"><button class="mini" onclick="staleSheet()">戻る</button>'+
+        '<button class="mini pri" onclick="applyStopAt()">この時刻で記録</button></div>';
+  openSheet(html);
+}
+function applyStopAt(){
+  if(!S.running){ closeSheet(); return; }
+  const r=S.running;
+  const en=new Date(document.getElementById('stEnd').value).getTime();
+  if(isNaN(en)||en<=r.start){ toast('開始より後の時刻を入れてください'); return; }
+  const newId='e'+en+Math.random().toString(36).slice(2,6);
+  S.entries.push({id:newId,pj:r.pj,cat:r.cat,start:r.start,end:en,sent:false});
+  S.running=null;_alerted=false;save();render();
+  confirmSheet(newId); // そのまま送信確認へ
+}
+
+// 復帰時チェックを登録
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkStaleOnResume(); });
+window.addEventListener('focus',checkStaleOnResume);
+window.addEventListener('pageshow',checkStaleOnResume);
 
 /* ═══════ 描画 ═══════ */
 function render(){
@@ -508,6 +616,7 @@ function toggleFav(k){
 function start(pj,cat){
   if(S.running){ if(!confirm('計測中の「'+S.running.cat+'」を終了して切り替えますか？')) return; stop(true); }
   S.running={pj,cat,start:Date.now()};
+  _alerted=false;
   save();render();
   if(navigator.vibrate) navigator.vibrate(12);
   toast('▶ '+cat+' 開始');
@@ -523,6 +632,7 @@ function stop(silent){
     toast('30秒未満のため記録しません');
   }
   S.running=null;save();render();
+  _alerted=false;
   if(navigator.vibrate) navigator.vibrate([12,60,12]);
   // 切替(silent)でなく、記録できたときは確認シートを出す
   if(!silent && newId){ confirmSheet(newId); }
@@ -830,7 +940,13 @@ document.getElementById('cfgBtn').onclick=cfgOpen;
 function cfgOpen(){
   let h='<h3>設定</h3>';
 
-  h+='<h2 style="margin-top:4px">PJ一覧</h2>';
+  h+='<h2 style="margin-top:4px">ストップ忘れ防止</h2>';
+  h+='<div class="note">計測がこの時間を超えると、警告を表示します（ストップ忘れ対策）。</div>';
+  h+='<select id="alertSel" onchange="setAlert(this.value)">'+
+     [30,45,60,90,120,180].map(v=>'<option value="'+v+'"'+(S.alertMin===v?' selected':'')+'>'+v+'分</option>').join('')+
+     '</select>';
+
+  h+='<h2>PJ一覧</h2>';
   S.projects.forEach((p,i)=>{
     h+='<div class="listrow"><span class="nm">'+esc(p)+'</span>'+
        '<button class="mini dan" onclick="delPj('+i+')">削除</button></div>';
@@ -850,8 +966,8 @@ function cfgOpen(){
   h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
   openSheet(h);
 }
-function addPj(){const v=document.getElementById('newPj').value.trim();if(!v)return;S.projects.push(v);save();cfgOpen();render();}
-function delPj(i){if(S.projects.length<=1)return;S.projects.splice(i,1);save();cfgOpen();render();}
+function setAlert(v){S.alertMin=parseInt(v,10)||60;_alerted=false;save();render();}
+function addPj(){const v=document.getElementById('newPj').value.trim();if(!v)return;S.projects.push(v);save();cfgOpen();render();}function delPj(i){if(S.projects.length<=1)return;S.projects.splice(i,1);save();cfgOpen();render();}
 function addCat(){const v=document.getElementById('newCat').value.trim();if(!v)return;S.cats.push({n:v,v:'keep'});save();cfgOpen();render();}
 function delCat(i){if(S.cats.length<=1)return;S.cats.splice(i,1);save();cfgOpen();render();}
 function setV(i,v){S.cats[i].v=v;save();cfgOpen();render();}
