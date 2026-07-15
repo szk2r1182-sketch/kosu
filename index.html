@@ -9,7 +9,16 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.2.1 (2026-07-14): 公開ホスティング対応のため初期PJ名を汎用化（実PJ名は設定画面から登録）
+  ver.1.3.2 (2026-07-15): 件名先頭に選別キーワード#kosuを付与（Outlookエクスポート時に件名で抽出可能に）。標準カレンダー方式の説明を実機挙動に合わせて修正
+-->
+<!--
+  ver.1.3.1 (2026-07-15): クイック打刻を「お気に入り固定＋頻度順・最大9件」に。各ボタンの★で固定/解除
+-->
+<!--
+  ver.1.3.0 (2026-07-15):
+  - 予定表フォーマットに PJ名/業務分類を明記し、本文に機械可読タグ行(#kosu ...)を追加
+  - 月次データ出力(CSV/Markdown)と月次サマリー画面を追加
+  - UI: 閉じるボタンを視認性の高い配色に。Outlook送りをメールアイコンの明確なボタンに。全体的にボタンを大型化
 -->
 <style>
   :root{
@@ -93,32 +102,54 @@
   /* ── クイック打刻 ── */
   .quick{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .qbtn{
+    position:relative;
     background:var(--panel);border:1px solid var(--line);border-radius:11px;
-    padding:12px 12px;text-align:left;cursor:pointer;color:var(--txt);
-    font-family:var(--sans);min-height:62px;
+    padding:12px 34px 12px 12px;text-align:left;cursor:pointer;color:var(--txt);
+    font-family:var(--sans);min-height:64px;
     display:flex;flex-direction:column;justify-content:center;gap:2px;
   }
   .qbtn:active{background:var(--panel-2);transform:scale(.98);}
-  .qbtn .cat{font-size:14px;font-weight:600;line-height:1.3;}
+  .qbtn .cat{font-size:15px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .qbtn .pj{font-size:11px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .qbtn.add{align-items:center;justify-content:center;color:var(--amber);border-style:dashed;font-size:22px;}
+  .qbtn .star{
+    position:absolute;top:6px;right:6px;width:28px;height:28px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;color:#4C5967;border-radius:8px;
+  }
+  .qbtn .star.on{color:var(--amber);}
+  .qbtn .star:active{background:var(--panel-2);}
+  .qbtn.add{align-items:center;justify-content:center;color:var(--amber);border-style:dashed;font-size:22px;padding:12px;}
 
   /* ── 実績リスト ── */
   .entry{
     display:flex;align-items:center;gap:10px;
     background:var(--panel);border:1px solid var(--line);
-    border-radius:10px;padding:10px 12px;margin-bottom:6px;
+    border-radius:12px;padding:12px;margin-bottom:8px;
   }
   .entry .time{font-family:var(--mono);font-size:12px;color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums;}
   .entry .body{flex:1;min-width:0;}
-  .entry .t1{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .entry .t2{font-size:11px;color:var(--mute);}
-  .entry .dur{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;}
-  .entry.sent{opacity:.55;}
+  .entry .t1{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .entry .t2{font-size:11px;color:var(--mute);margin-top:2px;}
+  .entry .dur{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;}
+  .entry.sent{opacity:.5;}
   .entry.sent .dur{color:var(--ok);}
-  .entry .del{
-    background:none;border:none;color:#4C5967;font-size:20px;padding:0 2px;cursor:pointer;line-height:1;
+  /* 実績行の操作ボタン（大きめ・タップしやすく） */
+  .rowbtn{
+    flex:0 0 auto;width:42px;height:42px;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--line);background:var(--panel-2);cursor:pointer;padding:0;
   }
+  .rowbtn svg{width:20px;height:20px;}
+  .rowbtn.send{background:var(--amber);border-color:var(--amber);}
+  .rowbtn.send svg{stroke:#12161B;}
+  .rowbtn.send:active{transform:scale(.94);}
+  .rowbtn.trash svg{stroke:#5A6673;}
+  .rowbtn.trash:active{background:#3A2226;}
+  .sentmark{
+    flex:0 0 auto;width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+    color:var(--ok);
+  }
+  .sentmark svg{width:20px;height:20px;stroke:var(--ok);}
   .vtag{
     display:inline-block;font-size:10px;padding:1px 5px;border-radius:4px;margin-right:5px;
     border:1px solid currentColor;
@@ -147,15 +178,20 @@
   }
   .dock-inner{max-width:520px;margin:0 auto;display:flex;gap:8px;}
   .send{
-    flex:1;background:var(--amber);color:#12161B;border:none;border-radius:11px;
-    padding:14px;font-size:15px;font-weight:700;font-family:var(--sans);cursor:pointer;
+    flex:1;background:var(--amber);color:#12161B;border:none;border-radius:13px;
+    padding:17px;font-size:16px;font-weight:700;font-family:var(--sans);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:8px;
   }
+  .send svg{width:20px;height:20px;stroke:#12161B;}
   .send:disabled{background:#2E3944;color:#5A6673;}
+  .send:disabled svg{stroke:#5A6673;}
   .send:active:not(:disabled){transform:scale(.98);}
   .icon-btn{
-    width:50px;background:var(--panel);border:1px solid var(--line);
-    border-radius:11px;color:var(--mute);font-size:18px;cursor:pointer;
+    width:58px;background:var(--panel);border:1px solid var(--line);
+    border-radius:13px;color:var(--txt);font-size:20px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
   }
+  .icon-btn:active{background:var(--panel-2);}
 
   /* ── シート ── */
   .sheet{
@@ -173,25 +209,28 @@
   .sheet h3{margin:0 0 12px;font-size:16px;}
   .opt{
     display:block;width:100%;text-align:left;background:var(--panel);
-    border:1px solid var(--line);border-radius:10px;padding:13px 14px;
-    color:var(--txt);font-size:15px;font-family:var(--sans);margin-bottom:6px;cursor:pointer;
+    border:1px solid var(--line);border-radius:12px;padding:16px;
+    color:var(--txt);font-size:16px;font-family:var(--sans);margin-bottom:8px;cursor:pointer;
   }
   .opt:active{background:var(--panel-2);}
   .opt .sub{font-size:11px;color:var(--mute);margin-top:2px;}
   .closebtn{
-    width:100%;background:none;border:1px solid var(--line);border-radius:10px;
-    padding:12px;color:var(--mute);font-size:14px;margin-top:8px;font-family:var(--sans);cursor:pointer;
+    width:100%;background:var(--panel-2);border:1px solid #3E4A57;border-radius:12px;
+    padding:15px;color:var(--txt);font-size:16px;font-weight:600;margin-top:12px;
+    font-family:var(--sans);cursor:pointer;
   }
+  .closebtn:active{background:#2B343E;}
+  .closebtn.done{background:var(--amber);color:#12161B;border-color:var(--amber);}
   input[type=text],select,input[type=datetime-local]{
     width:100%;background:var(--panel);border:1px solid var(--line);
-    border-radius:9px;padding:11px;color:var(--txt);font-size:15px;
+    border-radius:10px;padding:13px;color:var(--txt);font-size:16px;
     font-family:var(--sans);margin-bottom:8px;
   }
   .row2{display:flex;gap:8px;}
   .row2>*{flex:1;}
   .mini{
-    background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
-    color:var(--txt);padding:9px 12px;font-size:13px;font-family:var(--sans);cursor:pointer;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+    color:var(--txt);padding:13px 14px;font-size:15px;font-family:var(--sans);cursor:pointer;
   }
   .mini.pri{background:var(--amber);color:#12161B;border-color:var(--amber);font-weight:700;}
   .mini.dan{color:var(--rec);}
@@ -243,13 +282,16 @@
   <div id="entries"></div>
   <div class="sum" id="sum"></div>
 
-  <div class="ver">ver.1.2.1</div>
+  <div class="ver">ver.1.3.2</div>
 </div>
 
 <div class="dock">
   <div class="dock-inner">
-    <button class="send" id="sendBtn" disabled>カレンダーに追加</button>
-    <button class="icon-btn" id="csvBtn" title="CSV出力">⤓</button>
+    <button class="send" id="sendBtn" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>
+      <span id="sendLabel">Outlookへ追加</span>
+    </button>
+    <button class="icon-btn" id="monthBtn" title="月次出力・分析">📊</button>
     <button class="icon-btn" id="cfgBtn" title="設定">⚙</button>
   </div>
 </div>
@@ -285,11 +327,13 @@ const DEFAULT={
   ],
   entries:[],
   running:null,
-  mode:'ics'
+  mode:'ics',
+  favs:[]
 };
 let S=load()||JSON.parse(JSON.stringify(DEFAULT));
 if(!S.projects) S=JSON.parse(JSON.stringify(DEFAULT));
 if(!S.mode) S.mode='ics';
+if(!S.favs) S.favs=[];
 
 const VLABEL={add:'付加価値',keep:'維持管理',waste:'ムダ'};
 const VCLASS={add:'v-add',keep:'v-keep',waste:'v-waste'};
@@ -342,21 +386,29 @@ function render(){
     sb.style.display='none';
   }
 
-  // クイックボタン（使用頻度順 上位5件）
+  // クイックボタン（★お気に入り固定 → 頻度順 で最大9件）
+  const SEP='\u0001';
+  const favs=(S.favs||[]).slice();               // 固定（順序保持）
   const freq={};
-  S.entries.slice(-60).forEach(e=>{const k=e.pj+'\u0001'+e.cat;freq[k]=(freq[k]||0)+1;});
-  let keys=Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,5);
+  S.entries.slice(-80).forEach(e=>{const k=e.pj+SEP+e.cat;freq[k]=(freq[k]||0)+1;});
+  // 頻度順（★は除外して重複回避）
+  const byFreq=Object.keys(freq).filter(k=>!favs.includes(k)).sort((a,b)=>freq[b]-freq[a]);
+  let keys=favs.concat(byFreq).slice(0,9);
   if(keys.length===0){
-    keys=[S.projects[0]+'\u0001'+S.cats[0].n, S.projects[0]+'\u0001'+S.cats[2].n];
+    keys=[S.projects[0]+SEP+S.cats[0].n, S.projects[0]+SEP+(S.cats[2]?S.cats[2].n:S.cats[0].n)];
   }
   const q=document.getElementById('quick');
   q.innerHTML='';
   keys.forEach(k=>{
-    const [pj,cat]=k.split('\u0001');
+    const [pj,cat]=k.split(SEP);
+    const isFav=favs.includes(k);
     const b=document.createElement('button');
     b.className='qbtn';
-    b.innerHTML='<span class="cat">'+esc(cat)+'</span><span class="pj">'+esc(pj)+'</span>';
+    b.innerHTML='<span class="cat">'+esc(cat)+'</span><span class="pj">'+esc(pj)+'</span>'+
+      '<span class="star'+(isFav?' on':'')+'" role="button" aria-label="お気に入り固定">'+(isFav?'★':'☆')+'</span>';
     b.onclick=()=>start(pj,cat);
+    const star=b.querySelector('.star');
+    star.onclick=(ev)=>{ev.stopPropagation();toggleFav(k);};
     q.appendChild(b);
   });
   const add=document.createElement('button');
@@ -379,22 +431,29 @@ function render(){
     d.className='entry'+(e.sent?' sent':'');
     d.innerHTML=
       '<span class="time">'+hm(e.start)+'<br>'+hm(e.end)+'</span>'+
-      '<span class="body"><span class="t1">'+esc(e.cat)+'</span>'+
-      '<span class="t2"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+esc(e.pj)+(e.sent?' ・転送済':'')+'</span></span>'+
+      '<span class="body"><span class="t1">'+esc(e.pj)+'</span>'+
+      '<span class="t2"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+esc(e.cat)+'</span></span>'+
       '<span class="dur">'+hhmm(e.end-e.start)+'</span>';
     let snd=null;
     if(!e.sent){
       snd=document.createElement('button');
-      snd.className='del';snd.textContent='↥';snd.style.color='var(--amber)';
-      snd.setAttribute('aria-label','この記録だけカレンダーに追加');
-      snd.onclick=()=>sendOne(e.id);
+      snd.className='rowbtn send';
+      snd.setAttribute('aria-label','この記録をOutlookへ追加');
+      snd.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>';
+      snd.onclick=(ev)=>{ev.stopPropagation();sendOne(e.id);};
       d.appendChild(snd);
+    }else{
+      const mk=document.createElement('span');
+      mk.className='sentmark';mk.title='転送済';
+      mk.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>';
+      d.appendChild(mk);
     }
     const del=document.createElement('button');
-    del.className='del';del.textContent='×';del.setAttribute('aria-label','削除');
-    del.onclick=()=>{ if(confirm('この記録を削除しますか？')){S.entries=S.entries.filter(x=>x.id!==e.id);save();render();} };
+    del.className='rowbtn trash';del.setAttribute('aria-label','削除');
+    del.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6"></path></svg>';
+    del.onclick=(ev)=>{ ev.stopPropagation(); if(confirm('この記録を削除しますか？')){S.entries=S.entries.filter(x=>x.id!==e.id);save();render();} };
     d.appendChild(del);
-    d.onclick=ev=>{ if(ev.target!==del && ev.target!==snd) editEntry(e.id); };
+    d.onclick=ev=>{ if(ev.target===d || (ev.target.closest && ev.target.closest('.body,.time,.dur'))) editEntry(e.id); };
     box.appendChild(d);
   });
 
@@ -415,7 +474,7 @@ function render(){
   const sbn=document.getElementById('sendBtn');
   sbn.disabled=un===0;
   const dest=S.mode==='outlook'?'Outlookへ追加':'カレンダーに追加';
-  sbn.textContent=un===0?dest:dest+'（'+un+'件）';
+  document.getElementById('sendLabel').textContent=un===0?dest:dest+'（'+un+'件）';
 
   showWarn();
   save();
@@ -424,6 +483,16 @@ function cell(k,v){return '<div class="sumcell"><div class="k">'+k+'</div><div c
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 /* ═══════ 打刻 ═══════ */
+function toggleFav(k){
+  if(!S.favs) S.favs=[];
+  const i=S.favs.indexOf(k);
+  if(i>=0){ S.favs.splice(i,1); toast('固定を解除しました'); }
+  else{
+    if(S.favs.length>=9){ toast('固定は最大9件までです'); return; }
+    S.favs.push(k); toast('★ 固定しました');
+  }
+  save();render();
+}
 function start(pj,cat){
   if(S.running){ if(!confirm('計測中の「'+S.running.cat+'」を終了して切り替えますか？')) return; stop(true); }
   S.running={pj,cat,start:Date.now()};
@@ -470,8 +539,7 @@ function startFrom(pi,ci){closeSheet();start(S.projects[pi],S.cats[ci].n);}
 /* ═══════ 実績の編集 ═══════ */
 function editEntry(id){
   const e=S.entries.find(x=>x.id===id);if(!e)return;
-  const iso=t=>{const d=new Date(t-d0(t));return new Date(t-new Date(t).getTimezoneOffset()*60000).toISOString().slice(0,16);};
-  function d0(){return 0;}
+  const iso=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());};
   let h='<h3>記録を修正</h3>';
   h+='<select id="ePj">'+S.projects.map(p=>'<option'+(p===e.pj?' selected':'')+'>'+esc(p)+'</option>').join('')+'</select>';
   h+='<select id="eCat">'+S.cats.map(c=>'<option'+(c.n===e.cat?' selected':'')+'>'+esc(c.n)+'</option>').join('')+'</select>';
@@ -500,17 +568,34 @@ function icsTime(t){
 function fold(s){ // RFC5545 75オクテット折返し（簡易）
   return s.length<=74?s:s.match(/.{1,74}/g).join('\r\n ');
 }
+/* 予定の件名。先頭に選別キーワード #kosu を付与（Outlookエクスポート時に件名だけで抽出できる） */
+function subjectOf(e){
+  return '#kosu ['+e.pj+']['+e.cat+']';
+}
+/* 分析用の機械可読タグ行。後でCSV/正規表現で確実に拾える形 */
+function tagLine(e){
+  const c=catOf(e.cat);
+  const min=Math.round((e.end-e.start)/60000);
+  return '#kosu PJ=['+e.pj+'] 分類=['+e.cat+'] 価値=['+VLABEL[c.v]+'] 分=['+min+']';
+}
+/* 人が読む本文（1行目）＋機械可読行（2行目） */
+function bodyLines(e){
+  const c=catOf(e.cat);
+  return ['PJ: '+e.pj+' ／ 分類: '+e.cat+' ／ 価値区分: '+VLABEL[c.v]+' ／ 工数: '+hhmm(e.end-e.start),
+          tagLine(e)];
+}
 function buildIcs(list){
   let ics='BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//kosu-timecard//JP\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n';
   list.forEach(e=>{
     const c=catOf(e.cat);
+    const desc=bodyLines(e).join('\\n');
     ics+='BEGIN:VEVENT\r\n'
       +'UID:'+e.id+'@kosu-timecard\r\n'
       +'DTSTAMP:'+icsTime(Date.now())+'\r\n'
       +'DTSTART:'+icsTime(e.start)+'\r\n'
       +'DTEND:'+icsTime(e.end)+'\r\n'
-      +fold('SUMMARY:【'+e.pj+'】'+e.cat)+'\r\n'
-      +fold('DESCRIPTION:価値区分: '+VLABEL[c.v]+'\\n工数: '+hhmm(e.end-e.start)+'\\n(工数タイムレコーダーより登録)')+'\r\n'
+      +fold('SUMMARY:'+subjectOf(e))+'\r\n'
+      +fold('DESCRIPTION:'+desc)+'\r\n'
       +'CATEGORIES:'+VLABEL[c.v]+'\r\n'
       +'TRANSP:OPAQUE\r\n'
       +'END:VEVENT\r\n';
@@ -558,14 +643,13 @@ function localIso(t){
          pad(d.getHours())+':'+pad(d.getMinutes())+':00'+tzOffset(t);
 }
 function outlookUrl(e){
-  const c=catOf(e.cat);
   const p=new URLSearchParams({
     path:'/calendar/action/compose',
     rru:'addevent',
-    subject:'【'+e.pj+'】'+e.cat,
+    subject:subjectOf(e),
     startdt:localIso(e.start),
     enddt:localIso(e.end),
-    body:'価値区分: '+VLABEL[c.v]+' / 工数: '+hhmm(e.end-e.start)
+    body:bodyLines(e).join('\n')
   });
   return 'https://outlook.office.com/calendar/0/deeplink/compose?'+p.toString();
 }
@@ -600,22 +684,105 @@ function downloadBlob(blob,name){
   setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
 
-/* ═══════ CSV ═══════ */
-document.getElementById('csvBtn').onclick=()=>{
-  if(S.entries.length===0){toast('記録がありません');return;}
-  let csv='\ufeff日付,開始,終了,分,PJ,業務分類,価値区分\r\n';
-  S.entries.slice().sort((a,b)=>a.start-b.start).forEach(e=>{
-    csv+=[dkey(e.start),hm(e.start),hm(e.end),Math.round((e.end-e.start)/60000),
-          '"'+e.pj+'"','"'+e.cat+'"',VLABEL[catOf(e.cat).v]].join(',')+'\r\n';
+/* ═══════ 月次出力・分析 ═══════ */
+function monthKey(t){const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1);}
+function csvCell(s){return '"'+String(s).replace(/"/g,'""')+'"';}
+
+function monthlyEntries(mk){
+  return S.entries.filter(e=>monthKey(e.start)===mk).sort((a,b)=>a.start-b.start);
+}
+
+function exportCsv(mk){
+  const list=monthlyEntries(mk);
+  if(list.length===0){toast('この月の記録がありません');return;}
+  let csv='\ufeff日付,曜日,開始,終了,分,PJ,業務分類,価値区分\r\n';
+  const wd=['日','月','火','水','木','金','土'];
+  list.forEach(e=>{
+    csv+=[dkey(e.start),wd[new Date(e.start).getDay()],hm(e.start),hm(e.end),
+      Math.round((e.end-e.start)/60000),csvCell(e.pj),csvCell(e.cat),VLABEL[catOf(e.cat).v]].join(',')+'\r\n';
   });
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download='kosu_'+dkey(Date.now())+'.csv';
-  document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),4000);
-  toast('CSVを書き出しました');
-};
+  downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'kosu_'+mk+'.csv');
+  toast(mk+' のCSVを書き出しました');
+}
+
+function exportMd(mk){
+  const list=monthlyEntries(mk);
+  if(list.length===0){toast('この月の記録がありません');return;}
+  const total=list.reduce((s,e)=>s+(e.end-e.start),0);
+  // 集計
+  const byV={add:0,keep:0,waste:0};
+  const byPj={},byCat={};
+  list.forEach(e=>{
+    const ms=e.end-e.start,c=catOf(e.cat);
+    byV[c.v]+=ms;
+    byPj[e.pj]=(byPj[e.pj]||0)+ms;
+    byCat[e.cat]=(byCat[e.cat]||0)+ms;
+  });
+  const pct=ms=>total>0?Math.round(ms/total*100):0;
+  const sortDesc=o=>Object.keys(o).sort((a,b)=>o[b]-o[a]);
+
+  let md='# 工数分析 '+mk+'\n\n';
+  md+='- 対象期間: '+mk+'\n- 記録件数: '+list.length+'件\n- 合計工数: '+hhmm(total)+'（'+Math.round(total/60000)+'分）\n\n';
+
+  md+='## 価値区分別（バリューアワー）\n\n';
+  md+='| 価値区分 | 工数 | 構成比 |\n|---|--:|--:|\n';
+  ['add','keep','waste'].forEach(v=>{ md+='| '+VLABEL[v]+' | '+hhmm(byV[v])+' | '+pct(byV[v])+'% |\n'; });
+  md+='\n**VH率（付加価値の割合）: '+pct(byV.add)+'%**\n\n';
+
+  md+='## プロジェクト別\n\n| PJ | 工数 | 構成比 |\n|---|--:|--:|\n';
+  sortDesc(byPj).forEach(p=>{ md+='| '+p+' | '+hhmm(byPj[p])+' | '+pct(byPj[p])+'% |\n'; });
+
+  md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
+  sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
+
+  md+='\n---\n_工数タイムレコーダー ver.1.3.0 より出力_\n';
+  downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
+  toast(mk+' の分析Markdownを書き出しました');
+}
+
+function monthOpen(){
+  // 記録のある月の一覧
+  const months=[...new Set(S.entries.map(e=>monthKey(e.start)))].sort().reverse();
+  const cur=monthKey(Date.now());
+  if(!months.includes(cur)) months.unshift(cur);
+  const mk=S._selMonth&&months.includes(S._selMonth)?S._selMonth:months[0];
+  S._selMonth=mk;
+
+  const list=monthlyEntries(mk);
+  const total=list.reduce((s,e)=>s+(e.end-e.start),0);
+  const byV={add:0,keep:0,waste:0},byPj={};
+  list.forEach(e=>{const ms=e.end-e.start,c=catOf(e.cat);byV[c.v]+=ms;byPj[e.pj]=(byPj[e.pj]||0)+ms;});
+  const pct=ms=>total>0?Math.round(ms/total*100):0;
+
+  let h='<h3>月次分析・出力</h3>';
+  h+='<select id="mSel" onchange="selMonth(this.value)">'+
+     months.map(m=>'<option value="'+m+'"'+(m===mk?' selected':'')+'>'+m+'</option>').join('')+'</select>';
+
+  if(list.length===0){
+    h+='<div class="note">この月の記録はまだありません。</div>';
+  }else{
+    h+='<div class="sum" style="margin-bottom:10px">'+
+       cell('合計',hhmm(total))+cell('付加価値',hhmm(byV.add))+
+       cell('維持管理',hhmm(byV.keep))+cell('ムダ',hhmm(byV.waste))+
+       cell('VH率',pct(byV.add)+'%')+'</div>';
+    // PJ別 簡易バー
+    h+='<h2 style="margin-top:14px">PJ別</h2>';
+    Object.keys(byPj).sort((a,b)=>byPj[b]-byPj[a]).forEach(p=>{
+      h+='<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">'+
+         '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p)+'</span>'+
+         '<span style="color:var(--mute);font-family:var(--mono);flex:0 0 auto;margin-left:8px">'+hhmm(byPj[p])+' ・'+pct(byPj[p])+'%</span></div>'+
+         '<div style="height:6px;background:var(--panel);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct(byPj[p])+'%;background:var(--amber)"></div></div></div>';
+    });
+    h+='<div class="note">記録件数 '+list.length+'件。「何にどれだけ時間を使ったか」を PJ別・価値区分別で見られます。</div>';
+  }
+
+  h+='<div class="row2" style="margin-top:8px"><button class="mini pri" onclick="exportCsv(\''+mk+'\')">CSV出力</button>'+
+     '<button class="mini pri" onclick="exportMd(\''+mk+'\')">分析Markdown出力</button></div>';
+  h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
+  openSheet(h);
+}
+function selMonth(m){S._selMonth=m;monthOpen();}
+document.getElementById('monthBtn').onclick=monthOpen;
 
 /* ═══════ 設定 ═══════ */
 document.getElementById('cfgBtn').onclick=cfgOpen;
@@ -625,7 +792,7 @@ function cfgOpen(){
   h+='<h2 style="margin-top:4px">カレンダー転送方法</h2>';
   h+='<button class="opt" onclick="setMode(\'ics\')" style="border-color:'+(S.mode==='ics'?'var(--amber)':'var(--line)')+'">'+
      (S.mode==='ics'?'● ':'○ ')+'標準カレンダー（共有シート）'+
-     '<div class="sub">まとめて一括追加できる。Safariで開いた時のみ動作。<br>現在の環境: '+(CAN_SHARE?'<span style="color:var(--ok)">利用可</span>':'<span style="color:var(--rec)">利用不可</span>')+'</div></button>';
+     '<div class="sub">共有シートから追加。iPhoneでは共有先に「カレンダー」が出ず、Outlookアプリ等を選ぶ形になります。<br>現在の環境: '+(CAN_SHARE?'<span style="color:var(--ok)">利用可</span>':'<span style="color:var(--rec)">利用不可</span>')+'</div></button>';
   h+='<button class="opt" onclick="setMode(\'outlook\')" style="border-color:'+(S.mode==='outlook'?'var(--amber)':'var(--line)')+'">'+
      (S.mode==='outlook'?'● ':'○ ')+'Outlook直リンク'+
      '<div class="sub">Outlookの予定作成画面が開く。1件ずつだが、どの環境でも確実に動く。</div></button>';
@@ -647,7 +814,7 @@ function cfgOpen(){
   h+='<div class="row2"><input type="text" id="newCat" placeholder="業務分類を追加"><button class="mini pri" onclick="addCat()">追加</button></div>';
 
   h+='<div class="note">価値区分は分類ごとに固定されるため、打刻時の入力は不要です。付加価値時間の比率（VH率）が自動集計されます。</div>';
-  h+='<button class="closebtn" onclick="closeSheet()">閉じる</button>';
+  h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
   openSheet(h);
 }
 function setMode(m){S.mode=m;save();cfgOpen();render();}
