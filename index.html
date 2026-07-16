@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.9.0 (2026-07-16): 工数マトリクスを別ページ（全画面シート）表示に変更（項目増でも見やすいよう、縦横スクロール＋見出し・先頭列固定）。クイック打刻ボタンをタイマー幅内に収め、長い業務分類名は省略表示（幅が広がらないよう修正）
+  ver.1.10.0 (2026-07-16): 工数マトリクス（当日分）をOutlookの終日予定として送信できる機能を追加（予定表の一番上に表示され見つけやすい）。あわせてマトリクス専用のCSV書き出し・Markdown書き出しのアイコンボタンを追加（3つ横並び）
 -->
 <style>
   :root{
@@ -108,8 +108,8 @@
     display:flex;flex-direction:column;justify-content:center;gap:2px;
   }
   .qbtn:active{background:var(--panel-2);transform:scale(.98);}
-  .qbtn .cat{font-size:15px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .qbtn .pj{font-size:11px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .qbtn .cat{font-size:15px;font-weight:600;line-height:1.3;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .qbtn .pj{font-size:11px;color:var(--mute);min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .qbtn .star{
     position:absolute;top:6px;right:6px;width:28px;height:28px;
     display:flex;align-items:center;justify-content:center;
@@ -193,6 +193,21 @@
   .mtx .tot{color:var(--amber);font-weight:600;}
   .mtx tfoot th,.mtx tfoot td{position:sticky;bottom:0;border-top:2px solid var(--line);border-bottom:none;background:#151B22;}
   .mtx tfoot th{left:0;z-index:2;}
+
+  /* ── マトリクス送信アイコン行 ── */
+  .mtxsend{display:flex;gap:10px;justify-content:center;margin-top:14px;}
+  .mtxicon{
+    flex:0 0 auto;width:74px;padding:10px 0 8px;border-radius:12px;
+    display:flex;flex-direction:column;align-items:center;gap:5px;
+    border:1px solid var(--line);background:var(--panel-2);color:var(--txt);
+    font-family:var(--sans);cursor:pointer;
+  }
+  .mtxicon svg{width:22px;height:22px;stroke:var(--txt);}
+  .mtxicon span{font-size:11px;color:var(--mute);}
+  .mtxicon.amber{background:var(--amber);border-color:var(--amber);}
+  .mtxicon.amber svg{stroke:#12161B;}
+  .mtxicon.amber span{color:#12161B;font-weight:600;}
+  .mtxicon:active{transform:scale(.96);}
 
   /* ── 集計ボックス（月次分析で使用）── */
   .sum{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
@@ -335,7 +350,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.9.0</div>
+  <div class="ver">ver.1.10.0</div>
 </div>
 
 <div class="dock">
@@ -633,7 +648,7 @@ function buildMatrix(list){
     pjs.forEach(pj=>{ const k=pj+SEPM+cat; if(cellMs[k]!=null){ const v=toDecH(cellMs[k]); cellVal[k]=v; rt+=v; colTot[pj]+=v; } });
     rowTot[cat]=rt; grand+=rt;
   });
-  if(!list.length) return {html:'<div class="empty">まだ記録がありません</div>',grand:0,hasData:false};
+  if(!list.length) return {html:'<div class="empty">まだ記録がありません</div>',grand:0,hasData:false,pjs:[],cats:[],cellVal:{},rowTot:{},colTot:{}};
   let thead='<tr><th class="cnr">業務分類 ＼ PJ</th>';
   pjs.forEach(pj=>{ thead+='<th>'+esc(pj)+'</th>'; });
   thead+='<th class="tot">合計</th></tr>';
@@ -649,13 +664,111 @@ function buildMatrix(list){
   const html='<div class="mtx-wrap"><table class="mtx">'+
     '<caption>単位：h（0.1h＝6分刻み）／当日分・翌日リセット</caption>'+
     '<thead>'+thead+'</thead><tbody>'+tbody+'</tbody><tfoot>'+tfoot+'</tfoot></table></div>';
-  return {html,grand,hasData:true};
+  // cellValのキーはSEPM区切り。送信・書き出し用に pj/cat 別の生データも返す
+  return {html,grand,hasData:true,pjs,cats,cellVal,rowTot,colTot,SEPM};
 }
 // マトリクスを全画面（シート）で開く
 function openMatrix(){
   const m=buildMatrix(todayEntries());
-  openSheet('<h3>工数マトリクス（PC入力用）</h3>'+m.html+
-    '<button class="closebtn done" onclick="closeSheet()">閉じる</button>');
+  let h='<h3>工数マトリクス（PC入力用）</h3>'+m.html;
+  if(m.hasData){
+    h+='<div class="mtxsend">'+
+       '<button class="mtxicon amber" onclick="matrixSendOutlook()" aria-label="今日のマトリクスをOutlookへ送る">'+
+         '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>'+
+         '<span>Outlookへ</span></button>'+
+       '<button class="mtxicon" onclick="matrixExportCsv()" aria-label="今日のマトリクスをCSVで書き出す">'+
+         '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>'+
+         '<span>CSV</span></button>'+
+       '<button class="mtxicon" onclick="matrixExportMd()" aria-label="今日のマトリクスをMarkdownで書き出す">'+
+         '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6h6"></path><path d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"></path><path d="M8 13h8M8 17h5"></path></svg>'+
+         '<span>MD</span></button>'+
+       '</div>';
+  }
+  h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
+  openSheet(h);
+}
+
+/* ── 今日のマトリクスを Outlook（終日予定）／CSV／MDへ ── */
+function matrixRows(m){
+  // [業務分類, {pj: value...}, 行合計] の配列（cats順）
+  return m.cats.map(cat=>{
+    const row={};
+    m.pjs.forEach(pj=>{ const v=m.cellVal[pj+m.SEPM+cat]; if(v!=null) row[pj]=v; });
+    return {cat,row,tot:m.rowTot[cat]};
+  });
+}
+function matrixExportCsv(){
+  const m=buildMatrix(todayEntries());
+  if(!m.hasData){ toast('今日の記録がありません'); return; }
+  let csv='\ufeff業務分類,'+m.pjs.map(csvCell).join(',')+',合計\r\n';
+  matrixRows(m).forEach(r=>{
+    csv+=csvCell(r.cat)+','+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'').join(',')+','+fmtH(r.tot)+'\r\n';
+  });
+  csv+='合計,'+m.pjs.map(pj=>fmtH(m.colTot[pj])).join(',')+','+fmtH(m.grand)+'\r\n';
+  downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'kosu_matrix_'+dkey(Date.now())+'.csv');
+  toast('今日のマトリクスをCSVで書き出しました');
+}
+function matrixMdText(m){
+  let md='# 工数マトリクス '+dkey(Date.now())+'\n\n';
+  md+='| 業務分類 ＼ PJ | '+m.pjs.join(' | ')+' | 合計 |\n';
+  md+='|---|'+m.pjs.map(()=>'--:').join('|')+'|--:|\n';
+  matrixRows(m).forEach(r=>{
+    md+='| '+r.cat+' | '+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'–').join(' | ')+' | '+fmtH(r.tot)+' |\n';
+  });
+  md+='| **合計** | '+m.pjs.map(pj=>'**'+fmtH(m.colTot[pj])+'**').join(' | ')+' | **'+fmtH(m.grand)+'** |\n';
+  return md;
+}
+function matrixExportMd(){
+  const m=buildMatrix(todayEntries());
+  if(!m.hasData){ toast('今日の記録がありません'); return; }
+  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.10.0 より出力_\n';
+  downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+dkey(Date.now())+'.md');
+  toast('今日のマトリクスをMarkdownで書き出しました');
+}
+// Outlook本文用：プロジェクトごとに読みやすくまとめたテキスト（表崩れ対策のため罫線表は使わない）
+function matrixBodyText(m){
+  const lines=['当日の実績マトリクス（'+dkey(Date.now())+'）　合計 '+fmtH(m.grand)+'h',''];
+  m.pjs.forEach(pj=>{
+    if(m.colTot[pj]<0.05) return;
+    lines.push('■ '+pj+'　小計 '+fmtH(m.colTot[pj])+'h');
+    m.cats.forEach(cat=>{
+      const v=m.cellVal[pj+m.SEPM+cat];
+      if(v!=null && v>=0.05) lines.push('　・'+cat+'　'+fmtH(v)+'h');
+    });
+    lines.push('');
+  });
+  lines.push('合計　'+fmtH(m.grand)+'h');
+  return lines.join('\n');
+}
+function matrixTagLines(m){
+  const d=dkey(Date.now());
+  const tags=['#kosu-matrix 日付=['+d+']'];
+  m.pjs.forEach(pj=>{
+    m.cats.forEach(cat=>{
+      const v=m.cellVal[pj+m.SEPM+cat];
+      if(v!=null) tags.push('#kosu-matrix PJ=['+pj+'] 分類=['+cat+'] 時間h=['+fmtH(v)+']');
+    });
+  });
+  return tags.join('\n');
+}
+// 終日の予定として登録（予定表の一番上に表示され、後から見つけやすい）
+function matrixOutlookUrl(m){
+  const d=dkey(Date.now());
+  const p=new URLSearchParams({
+    path:'/calendar/action/compose',
+    rru:'addevent',
+    subject:'#kosu 日次実績サマリー '+d,
+    startdt:d,
+    enddt:d,
+    allday:'true',
+    body:matrixBodyText(m)+'\n\n'+matrixTagLines(m)
+  });
+  return 'https://outlook.office.com/calendar/0/deeplink/compose?'+p.toString();
+}
+function matrixSendOutlook(){
+  const m=buildMatrix(todayEntries());
+  if(!m.hasData){ toast('今日の記録がありません'); return; }
+  location.href=matrixOutlookUrl(m);
 }
 function cell(k,v,isTotal){return '<div class="sumcell'+(isTotal?' total':'')+'"><div class="k">'+esc(k)+'</div><div class="v">'+v+'</div></div>';}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -944,7 +1057,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.9.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.10.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
