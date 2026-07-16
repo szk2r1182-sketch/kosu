@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.6.0 (2026-07-16): 初期PJ一覧を「プロジェクトA・プロジェクトB・共通/量産・脱属人化/標準化」に変更。初期業務分類を11区分（本業務／会議・打合せ／資料作成／管理・マネジメント／教育・移譲・自己啓発／改善活動／トラブル対応・手戻り・待ち／折衝・調整／メール対応／移動／トランスクリプト収集・議事録作成）に刷新し、価値区分を紐づけ
+  ver.1.7.0 (2026-07-16): 今日の実績の集計を刷新。プロジェクト別内訳（PJごとの合計＋業務分類ごとの小計）を追加し、下部の集計ボックスを価値区分別（付加価値/維持管理/ムダ/VH率）から業務分類別（合計＋業務分類ごと）に変更。いずれも当日分のみ集計（日次リセット）
 -->
 <style>
   :root{
@@ -159,13 +159,26 @@
 
   .empty{color:#4C5967;font-size:13px;text-align:center;padding:20px 0;}
 
-  /* ── 集計 ── */
-  .sum{display:flex;gap:6px;margin-top:10px;}
+  /* ── プロジェクト別内訳 ── */
+  .pjsum{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+  .pjgrp{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 11px;}
+  .pjgrp .ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .pjgrp .pn{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pjgrp .pt{flex:0 0 auto;font-family:var(--mono);font-size:15px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;}
+  .pjgrp .pt .lb{font-family:inherit;font-size:11px;color:var(--mute);margin-right:4px;font-weight:400;}
+  .pjgrp .prow{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--mute);margin-top:5px;padding-left:2px;}
+  .pjgrp .prow .cn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pjgrp .prow .pv{flex:0 0 auto;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+
+  /* ── 集計（業務分類別）── */
+  .sum{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
   .sumcell{
-    flex:1;background:var(--panel);border:1px solid var(--line);
+    flex:1 1 calc(33.333% - 4px);min-width:92px;
+    background:var(--panel);border:1px solid var(--line);
     border-radius:9px;padding:8px 6px;text-align:center;
   }
-  .sumcell .k{font-size:10px;color:var(--mute);}
+  .sumcell.total{border-color:var(--amber);}
+  .sumcell .k{font-size:10px;color:var(--mute);line-height:1.25;word-break:break-word;}
   .sumcell .v{font-family:var(--mono);font-size:17px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums;}
 
   /* ── 転送バー（固定） ── */
@@ -296,9 +309,10 @@
 
   <h2>今日の実績</h2>
   <div id="entries"></div>
+  <div class="pjsum" id="pjsum"></div>
   <div class="sum" id="sum"></div>
 
-  <div class="ver">ver.1.6.0</div>
+  <div class="ver">ver.1.7.0</div>
 </div>
 
 <div class="dock">
@@ -560,21 +574,44 @@ function render(){
     box.appendChild(d);
   });
 
-  // 集計
-  const tot={add:0,keep:0,waste:0};
-  list.forEach(e=>{tot[catOf(e.cat).v]+=e.end-e.start;});
-  const all=tot.add+tot.keep+tot.waste;
-  const rate=all>0?Math.round(tot.add/all*100):0;
-  document.getElementById('sum').innerHTML=
-    cell('合計',hhmm(all))+
-    cell('付加価値',hhmm(tot.add))+
-    cell('維持管理',hhmm(tot.keep))+
-    cell('ムダ',hhmm(tot.waste))+
-    cell('VH率',rate+'%');
+  // 集計（今日分のみ＝日次リセット）
+  //  ・プロジェクト別内訳：PJごとの合計＋業務分類ごとの小計
+  //  ・業務分類別の合計ボックス：合計＋業務分類ごと（全PJ横断）
+  const pjMap={};   // pj -> {total, cats:{catName:ms}}
+  const catMap={};  // catName -> ms（全PJ横断）
+  let grand=0;
+  list.forEach(e=>{
+    const ms=e.end-e.start;
+    grand+=ms;
+    if(!pjMap[e.pj]) pjMap[e.pj]={total:0,cats:{}};
+    pjMap[e.pj].total+=ms;
+    pjMap[e.pj].cats[e.cat]=(pjMap[e.pj].cats[e.cat]||0)+ms;
+    catMap[e.cat]=(catMap[e.cat]||0)+ms;
+  });
+
+  // プロジェクト別内訳（合計の多い順）
+  const pjBox=document.getElementById('pjsum');
+  pjBox.innerHTML='';
+  Object.keys(pjMap).sort((a,b)=>pjMap[b].total-pjMap[a].total).forEach(pj=>{
+    const g=pjMap[pj];
+    const rows=Object.keys(g.cats).sort((a,b)=>g.cats[b]-g.cats[a]).map(cn=>
+      '<div class="prow"><span class="cn">'+esc(cn)+'</span><span class="pv">'+hhmm(g.cats[cn])+'</span></div>'
+    ).join('');
+    pjBox.innerHTML+=
+      '<div class="pjgrp"><div class="ph"><span class="pn">'+esc(pj)+'</span>'+
+      '<span class="pt"><span class="lb">合計</span>'+hhmm(g.total)+'</span></div>'+rows+'</div>';
+  });
+
+  // 業務分類別ボックス（先頭に合計 → S.catsの並び順で時間のあるもの）
+  let cells=cell('合計',hhmm(grand),true);
+  S.cats.forEach(c=>{ if(catMap[c.n]) cells+=cell(c.n,hhmm(catMap[c.n])); });
+  // S.cats に無い分類（過去に使い削除済み等）も末尾に拾う
+  Object.keys(catMap).forEach(cn=>{ if(!S.cats.find(c=>c.n===cn)) cells+=cell(cn,hhmm(catMap[cn])); });
+  document.getElementById('sum').innerHTML=cells;
 
   save();
 }
-function cell(k,v){return '<div class="sumcell"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';}
+function cell(k,v,isTotal){return '<div class="sumcell'+(isTotal?' total':'')+'"><div class="k">'+esc(k)+'</div><div class="v">'+v+'</div></div>';}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 /* ═══════ 打刻 ═══════ */
@@ -861,7 +898,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.6.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.7.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
