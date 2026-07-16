@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.7.0 (2026-07-16): 今日の実績の集計を刷新。プロジェクト別内訳（PJごとの合計＋業務分類ごとの小計）を追加し、下部の集計ボックスを価値区分別（付加価値/維持管理/ムダ/VH率）から業務分類別（合計＋業務分類ごと）に変更。いずれも当日分のみ集計（日次リセット）
+  ver.1.9.0 (2026-07-16): 工数マトリクスを別ページ（全画面シート）表示に変更（項目増でも見やすいよう、縦横スクロール＋見出し・先頭列固定）。クイック打刻ボタンをタイマー幅内に収め、長い業務分類名は省略表示（幅が広がらないよう修正）
 -->
 <style>
   :root{
@@ -99,12 +99,12 @@
   h2::after{content:"";flex:1;height:1px;background:var(--line);}
 
   /* ── クイック打刻 ── */
-  .quick{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .quick{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;}
   .qbtn{
     position:relative;
     background:var(--panel);border:1px solid var(--line);border-radius:11px;
     padding:12px 34px 12px 12px;text-align:left;cursor:pointer;color:var(--txt);
-    font-family:var(--sans);min-height:64px;
+    font-family:var(--sans);min-height:64px;min-width:0;overflow:hidden;
     display:flex;flex-direction:column;justify-content:center;gap:2px;
   }
   .qbtn:active{background:var(--panel-2);transform:scale(.98);}
@@ -159,18 +159,42 @@
 
   .empty{color:#4C5967;font-size:13px;text-align:center;padding:20px 0;}
 
-  /* ── プロジェクト別内訳 ── */
-  .pjsum{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
-  .pjgrp{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 11px;}
-  .pjgrp .ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
-  .pjgrp .pn{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .pjgrp .pt{flex:0 0 auto;font-family:var(--mono);font-size:15px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;}
-  .pjgrp .pt .lb{font-family:inherit;font-size:11px;color:var(--mute);margin-right:4px;font-weight:400;}
-  .pjgrp .prow{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--mute);margin-top:5px;padding-left:2px;}
-  .pjgrp .prow .cn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .pjgrp .prow .pv{flex:0 0 auto;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  /* ── 今日の実績マトリクス（横:PJ × 縦:業務分類） ── */
+  .mtxbtn{
+    margin-top:12px;width:100%;padding:13px;border-radius:11px;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--txt);
+    font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;
+  }
+  .mtxbtn:active{transform:scale(.99);background:var(--panel);}
+  .mtx-wrap{
+    margin-top:12px;overflow:auto;max-height:74vh;-webkit-overflow-scrolling:touch;
+    border:1px solid var(--line);border-radius:10px;background:var(--panel);
+  }
+  .mtx{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
+  .mtx caption{caption-side:top;text-align:left;font-size:11px;color:var(--mute);padding:8px 10px 4px;}
+  .mtx th,.mtx td{padding:9px 11px;white-space:nowrap;border-bottom:1px solid var(--line);}
+  .mtx thead th{
+    position:sticky;top:0;z-index:2;
+    background:var(--panel-2);color:var(--mute);font-weight:600;
+    text-align:center;vertical-align:bottom;white-space:normal;line-height:1.2;min-width:60px;
+  }
+  .mtx tbody th,.mtx tfoot th{
+    text-align:left;font-weight:500;color:var(--txt);white-space:normal;line-height:1.2;
+    position:sticky;left:0;z-index:1;background:var(--panel);
+    min-width:120px;max-width:170px;box-shadow:1px 0 0 var(--line);
+  }
+  .mtx thead th.cnr{
+    position:sticky;left:0;top:0;z-index:3;background:var(--panel-2);
+    text-align:left;color:var(--mute);box-shadow:1px 0 0 var(--line);
+  }
+  .mtx td{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--txt);}
+  .mtx td.empty{color:#3A434F;font-family:inherit;}
+  .mtx td.z{color:var(--mute);}
+  .mtx .tot{color:var(--amber);font-weight:600;}
+  .mtx tfoot th,.mtx tfoot td{position:sticky;bottom:0;border-top:2px solid var(--line);border-bottom:none;background:#151B22;}
+  .mtx tfoot th{left:0;z-index:2;}
 
-  /* ── 集計（業務分類別）── */
+  /* ── 集計ボックス（月次分析で使用）── */
   .sum{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
   .sumcell{
     flex:1 1 calc(33.333% - 4px);min-width:92px;
@@ -309,10 +333,9 @@
 
   <h2>今日の実績</h2>
   <div id="entries"></div>
-  <div class="pjsum" id="pjsum"></div>
-  <div class="sum" id="sum"></div>
+  <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.7.0</div>
+  <div class="ver">ver.1.9.0</div>
 </div>
 
 <div class="dock">
@@ -381,6 +404,10 @@ function hhmm(ms){
   const m=Math.round(ms/60000);
   return Math.floor(m/60)+'h'+pad(m%60);
 }
+// 小数時間表示（0.1h＝6分刻み）。6分→0.1h、30分→0.5h
+function toDecH(ms){return Math.round(ms/3600000/0.1)*0.1;}   // ms→時間(0.1刻み,数値)
+function fmtH(v){return (Math.round(v*10)/10).toFixed(1);}    // 数値→"0.5"
+function hDec(ms){return fmtH(ms/3600000)+'h';}               // ms→"0.5h"
 function catOf(name){return S.cats.find(c=>c.n===name)||{n:name,v:'keep'};}
 function toast(msg){
   const t=document.getElementById('toast');
@@ -550,7 +577,7 @@ function render(){
       '<span class="time">'+hm(e.start)+'<br>'+hm(e.end)+'</span>'+
       '<span class="body"><span class="t1">'+esc(e.pj)+'</span>'+
       '<span class="t2"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+esc(e.cat)+'</span></span>'+
-      '<span class="dur">'+hhmm(e.end-e.start)+'</span>';
+      '<span class="dur">'+hDec(e.end-e.start)+'</span>';
     let snd=null;
     if(!e.sent){
       snd=document.createElement('button');
@@ -574,42 +601,61 @@ function render(){
     box.appendChild(d);
   });
 
-  // 集計（今日分のみ＝日次リセット）
-  //  ・プロジェクト別内訳：PJごとの合計＋業務分類ごとの小計
-  //  ・業務分類別の合計ボックス：合計＋業務分類ごと（全PJ横断）
-  const pjMap={};   // pj -> {total, cats:{catName:ms}}
-  const catMap={};  // catName -> ms（全PJ横断）
-  let grand=0;
-  list.forEach(e=>{
-    const ms=e.end-e.start;
-    grand+=ms;
-    if(!pjMap[e.pj]) pjMap[e.pj]={total:0,cats:{}};
-    pjMap[e.pj].total+=ms;
-    pjMap[e.pj].cats[e.cat]=(pjMap[e.pj].cats[e.cat]||0)+ms;
-    catMap[e.cat]=(catMap[e.cat]||0)+ms;
-  });
-
-  // プロジェクト別内訳（合計の多い順）
-  const pjBox=document.getElementById('pjsum');
-  pjBox.innerHTML='';
-  Object.keys(pjMap).sort((a,b)=>pjMap[b].total-pjMap[a].total).forEach(pj=>{
-    const g=pjMap[pj];
-    const rows=Object.keys(g.cats).sort((a,b)=>g.cats[b]-g.cats[a]).map(cn=>
-      '<div class="prow"><span class="cn">'+esc(cn)+'</span><span class="pv">'+hhmm(g.cats[cn])+'</span></div>'
-    ).join('');
-    pjBox.innerHTML+=
-      '<div class="pjgrp"><div class="ph"><span class="pn">'+esc(pj)+'</span>'+
-      '<span class="pt"><span class="lb">合計</span>'+hhmm(g.total)+'</span></div>'+rows+'</div>';
-  });
-
-  // 業務分類別ボックス（先頭に合計 → S.catsの並び順で時間のあるもの）
-  let cells=cell('合計',hhmm(grand),true);
-  S.cats.forEach(c=>{ if(catMap[c.n]) cells+=cell(c.n,hhmm(catMap[c.n])); });
-  // S.cats に無い分類（過去に使い削除済み等）も末尾に拾う
-  Object.keys(catMap).forEach(cn=>{ if(!S.cats.find(c=>c.n===cn)) cells+=cell(cn,hhmm(catMap[cn])); });
-  document.getElementById('sum').innerHTML=cells;
+  // マトリクスは別ページ（openMatrix）で表示。ボタンに当日合計を表示
+  const mtxBtn=document.getElementById('mtxBtn');
+  if(mtxBtn){
+    const m=buildMatrix(list);
+    mtxBtn.textContent = m.hasData
+      ? '🔳　工数マトリクス（PC入力用）　合計 '+fmtH(m.grand)+'h'
+      : '🔳　工数マトリクス（PC入力用）を開く';
+  }
 
   save();
+}
+
+// 当日の実績（新しい順）
+function todayEntries(){
+  const t=dkey(Date.now());
+  return S.entries.filter(e=>dkey(e.start)===t).sort((a,b)=>b.start-a.start);
+}
+// マトリクスHTMLを生成（横:PJ × 縦:業務分類、0.1h刻み、行/列/総合計は丸めセルの合計）
+function buildMatrix(list){
+  const SEPM='\u0001';
+  const cellMs={};
+  list.forEach(e=>{ const k=e.pj+SEPM+e.cat; cellMs[k]=(cellMs[k]||0)+(e.end-e.start); });
+  const pjs=[]; S.projects.forEach(p=>{ if(list.some(e=>e.pj===p)) pjs.push(p); });
+  list.forEach(e=>{ if(!pjs.includes(e.pj)) pjs.push(e.pj); });
+  const cats=[]; S.cats.forEach(c=>{ if(list.some(e=>e.cat===c.n)) cats.push(c.n); });
+  list.forEach(e=>{ if(!cats.includes(e.cat)) cats.push(e.cat); });
+  const cellVal={}, rowTot={}, colTot={}; let grand=0; pjs.forEach(p=>colTot[p]=0);
+  cats.forEach(cat=>{
+    let rt=0;
+    pjs.forEach(pj=>{ const k=pj+SEPM+cat; if(cellMs[k]!=null){ const v=toDecH(cellMs[k]); cellVal[k]=v; rt+=v; colTot[pj]+=v; } });
+    rowTot[cat]=rt; grand+=rt;
+  });
+  if(!list.length) return {html:'<div class="empty">まだ記録がありません</div>',grand:0,hasData:false};
+  let thead='<tr><th class="cnr">業務分類 ＼ PJ</th>';
+  pjs.forEach(pj=>{ thead+='<th>'+esc(pj)+'</th>'; });
+  thead+='<th class="tot">合計</th></tr>';
+  let tbody='';
+  cats.forEach(cat=>{
+    tbody+='<tr><th>'+esc(cat)+'</th>';
+    pjs.forEach(pj=>{ const v=cellVal[pj+SEPM+cat]; tbody+=(v==null)?'<td class="empty">–</td>':'<td'+(v<0.05?' class="z"':'')+'>'+fmtH(v)+'</td>'; });
+    tbody+='<td class="tot">'+fmtH(rowTot[cat])+'</td></tr>';
+  });
+  let tfoot='<tr><th>合計</th>';
+  pjs.forEach(pj=>{ tfoot+='<td class="tot">'+fmtH(colTot[pj])+'</td>'; });
+  tfoot+='<td class="tot">'+fmtH(grand)+'</td></tr>';
+  const html='<div class="mtx-wrap"><table class="mtx">'+
+    '<caption>単位：h（0.1h＝6分刻み）／当日分・翌日リセット</caption>'+
+    '<thead>'+thead+'</thead><tbody>'+tbody+'</tbody><tfoot>'+tfoot+'</tfoot></table></div>';
+  return {html,grand,hasData:true};
+}
+// マトリクスを全画面（シート）で開く
+function openMatrix(){
+  const m=buildMatrix(todayEntries());
+  openSheet('<h3>工数マトリクス（PC入力用）</h3>'+m.html+
+    '<button class="closebtn done" onclick="closeSheet()">閉じる</button>');
 }
 function cell(k,v,isTotal){return '<div class="sumcell'+(isTotal?' total':'')+'"><div class="k">'+esc(k)+'</div><div class="v">'+v+'</div></div>';}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -898,7 +944,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.7.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.9.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
