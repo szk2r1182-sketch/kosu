@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.10.0 (2026-07-16): 工数マトリクス（当日分）をOutlookの終日予定として送信できる機能を追加（予定表の一番上に表示され見つけやすい）。あわせてマトリクス専用のCSV書き出し・Markdown書き出しのアイコンボタンを追加（3つ横並び）
+  ver.1.11.0 (2026-07-16): Outlookへの日次実績サマリー送信を、プレーンテキストからHTMLの罫線表（実際のマトリクス表）に変更。予定本文を開くと、アプリの工数マトリクスと同じ見た目の表がそのまま表示される
 -->
 <style>
   :root{
@@ -350,7 +350,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.10.0</div>
+  <div class="ver">ver.1.11.0</div>
 </div>
 
 <div class="dock">
@@ -721,24 +721,32 @@ function matrixMdText(m){
 function matrixExportMd(){
   const m=buildMatrix(todayEntries());
   if(!m.hasData){ toast('今日の記録がありません'); return; }
-  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.10.0 より出力_\n';
+  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.11.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+dkey(Date.now())+'.md');
   toast('今日のマトリクスをMarkdownで書き出しました');
 }
 // Outlook本文用：プロジェクトごとに読みやすくまとめたテキスト（表崩れ対策のため罫線表は使わない）
-function matrixBodyText(m){
-  const lines=['当日の実績マトリクス（'+dkey(Date.now())+'）　合計 '+fmtH(m.grand)+'h',''];
-  m.pjs.forEach(pj=>{
-    if(m.colTot[pj]<0.05) return;
-    lines.push('■ '+pj+'　小計 '+fmtH(m.colTot[pj])+'h');
-    m.cats.forEach(cat=>{
-      const v=m.cellVal[pj+m.SEPM+cat];
-      if(v!=null && v>=0.05) lines.push('　・'+cat+'　'+fmtH(v)+'h');
+// Outlook本文用：見たままの罫線表（HTML）で送る。予定の本文欄はHTMLとして解釈されるため実際の表になる
+function matrixBodyHtml(m){
+  let html='<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:13px;color:#222;">';
+  html+='<p style="margin:0 0 8px;font-weight:bold;">当日の実績マトリクス（'+dkey(Date.now())+'）　合計 '+fmtH(m.grand)+'h</p>';
+  html+='<table style="border-collapse:collapse;font-size:12px;" cellpadding="6" cellspacing="0">';
+  html+='<tr><th style="border:1px solid #999;background:#f2f2f2;text-align:left;">業務分類＼PJ</th>';
+  m.pjs.forEach(pj=>{ html+='<th style="border:1px solid #999;background:#f2f2f2;text-align:center;">'+esc(pj)+'</th>'; });
+  html+='<th style="border:1px solid #999;background:#f2f2f2;text-align:center;">合計</th></tr>';
+  matrixRows(m).forEach(r=>{
+    html+='<tr><td style="border:1px solid #ccc;">'+esc(r.cat)+'</td>';
+    m.pjs.forEach(pj=>{
+      const v=r.row[pj];
+      html+='<td style="border:1px solid #ccc;text-align:right;'+(v==null?'color:#bbb;':'')+'">'+(v==null?'–':fmtH(v))+'</td>';
     });
-    lines.push('');
+    html+='<td style="border:1px solid #ccc;text-align:right;font-weight:bold;">'+fmtH(r.tot)+'</td></tr>';
   });
-  lines.push('合計　'+fmtH(m.grand)+'h');
-  return lines.join('\n');
+  html+='<tr><td style="border:1px solid #999;font-weight:bold;background:#f8f8f8;">合計</td>';
+  m.pjs.forEach(pj=>{ html+='<td style="border:1px solid #999;text-align:right;font-weight:bold;background:#f8f8f8;">'+fmtH(m.colTot[pj])+'</td>'; });
+  html+='<td style="border:1px solid #999;text-align:right;font-weight:bold;background:#f8f8f8;">'+fmtH(m.grand)+'</td></tr>';
+  html+='</table></div>';
+  return html;
 }
 function matrixTagLines(m){
   const d=dkey(Date.now());
@@ -749,11 +757,12 @@ function matrixTagLines(m){
       if(v!=null) tags.push('#kosu-matrix PJ=['+pj+'] 分類=['+cat+'] 時間h=['+fmtH(v)+']');
     });
   });
-  return tags.join('\n');
+  return tags.map(esc).join('<br>');
 }
 // 終日の予定として登録（予定表の一番上に表示され、後から見つけやすい）
 function matrixOutlookUrl(m){
   const d=dkey(Date.now());
+  const tagsHtml='<div style="font-size:10px;color:#999;margin-top:12px;">'+matrixTagLines(m)+'</div>';
   const p=new URLSearchParams({
     path:'/calendar/action/compose',
     rru:'addevent',
@@ -761,7 +770,7 @@ function matrixOutlookUrl(m){
     startdt:d,
     enddt:d,
     allday:'true',
-    body:matrixBodyText(m)+'\n\n'+matrixTagLines(m)
+    body:matrixBodyHtml(m)+tagsHtml
   });
   return 'https://outlook.office.com/calendar/0/deeplink/compose?'+p.toString();
 }
@@ -1057,7 +1066,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.10.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.11.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
