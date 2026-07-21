@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.11.0 (2026-07-16): Outlookへの日次実績サマリー送信を、プレーンテキストからHTMLの罫線表（実際のマトリクス表）に変更。予定本文を開くと、アプリの工数マトリクスと同じ見た目の表がそのまま表示される
+  ver.1.12.0 (2026-07-16): Outlookへの送信（個別記録・工数マトリクスの両方）に二重実行防止ロックを追加。連打や重複した呼び出しがあっても、1回の操作につき1件しか登録されないようにした
 -->
 <style>
   :root{
@@ -350,7 +350,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.11.0</div>
+  <div class="ver">ver.1.12.0</div>
 </div>
 
 <div class="dock">
@@ -721,7 +721,7 @@ function matrixMdText(m){
 function matrixExportMd(){
   const m=buildMatrix(todayEntries());
   if(!m.hasData){ toast('今日の記録がありません'); return; }
-  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.11.0 より出力_\n';
+  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.12.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+dkey(Date.now())+'.md');
   toast('今日のマトリクスをMarkdownで書き出しました');
 }
@@ -775,9 +775,10 @@ function matrixOutlookUrl(m){
   return 'https://outlook.office.com/calendar/0/deeplink/compose?'+p.toString();
 }
 function matrixSendOutlook(){
+  if(_outlookSendLock) return;
   const m=buildMatrix(todayEntries());
   if(!m.hasData){ toast('今日の記録がありません'); return; }
-  location.href=matrixOutlookUrl(m);
+  withOutlookSendLock(()=>{ location.href=matrixOutlookUrl(m); });
 }
 function cell(k,v,isTotal){return '<div class="sumcell'+(isTotal?' total':'')+'"><div class="k">'+esc(k)+'</div><div class="v">'+v+'</div></div>';}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -987,14 +988,25 @@ function outlookUrl(e){
 }
 
 /* ── 転送の入口 ── */
+let _outlookSendLock=false; // Outlookへの送信（個別記録／マトリクス共通）の二重実行防止
+function withOutlookSendLock(fn){
+  if(_outlookSendLock) return false;
+  _outlookSendLock=true;
+  setTimeout(()=>{_outlookSendLock=false;},2000);
+  fn();
+  return true;
+}
 async function sendToCalendar(list){
   if(list.length===0) return;
   if(S.mode==='outlook'){
+    if(_outlookSendLock) return; // 連打・二重呼び出しはここで止める
     const e=list.slice().sort((a,b)=>a.start-b.start)[0];
     const rest=list.length-1;
-    e.sent=true;save();render();
-    if(rest>0) toast('残り'+rest+'件。戻ってもう一度押してください');
-    location.href=outlookUrl(e);
+    withOutlookSendLock(()=>{
+      e.sent=true;save();render();
+      if(rest>0) toast('残り'+rest+'件。戻ってもう一度押してください');
+      location.href=outlookUrl(e);
+    });
     return;
   }
   const ok=await shareIcs(list);
@@ -1066,7 +1078,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.11.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.12.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
