@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.12.0 (2026-07-16): Outlookへの送信（個別記録・工数マトリクスの両方）に二重実行防止ロックを追加。連打や重複した呼び出しがあっても、1回の操作につき1件しか登録されないようにした
+  ver.1.13.0 (2026-07-16): Outlookへのリンクをlocation.hrefでの自アプリ内遷移から、window.openによる別ウィンドウ表示に変更。ホーム画面追加アプリでiPhoneのみ発生していた「修正後の送信で2件登録される」不具合に対応（自アプリの画面が二重に残らないようにした）
 -->
 <style>
   :root{
@@ -350,7 +350,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.12.0</div>
+  <div class="ver">ver.1.13.0</div>
 </div>
 
 <div class="dock">
@@ -721,7 +721,7 @@ function matrixMdText(m){
 function matrixExportMd(){
   const m=buildMatrix(todayEntries());
   if(!m.hasData){ toast('今日の記録がありません'); return; }
-  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.12.0 より出力_\n';
+  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.13.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+dkey(Date.now())+'.md');
   toast('今日のマトリクスをMarkdownで書き出しました');
 }
@@ -778,7 +778,7 @@ function matrixSendOutlook(){
   if(_outlookSendLock) return;
   const m=buildMatrix(todayEntries());
   if(!m.hasData){ toast('今日の記録がありません'); return; }
-  withOutlookSendLock(()=>{ location.href=matrixOutlookUrl(m); });
+  withOutlookSendLock(()=>{ openOutlookUrl(matrixOutlookUrl(m)); });
 }
 function cell(k,v,isTotal){return '<div class="sumcell'+(isTotal?' total':'')+'"><div class="k">'+esc(k)+'</div><div class="v">'+v+'</div></div>';}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -996,6 +996,13 @@ function withOutlookSendLock(fn){
   fn();
   return true;
 }
+// Outlookのリンクは別ウィンドウで開く（アプリ自体を移動させない）。
+// ホーム画面追加アプリでlocation.hrefを使うと、iPhoneでOutlookアプリへの受け渡しと
+// 自アプリ内でのページ遷移が両方発生し、画面が二重に残って二重登録につながることがあるため。
+function openOutlookUrl(url){
+  const w=window.open(url,'_blank');
+  if(!w){ location.href=url; } // ポップアップブロック等でwindow.openが失敗した場合のみ従来方式にフォールバック
+}
 async function sendToCalendar(list){
   if(list.length===0) return;
   if(S.mode==='outlook'){
@@ -1005,7 +1012,7 @@ async function sendToCalendar(list){
     withOutlookSendLock(()=>{
       e.sent=true;save();render();
       if(rest>0) toast('残り'+rest+'件。戻ってもう一度押してください');
-      location.href=outlookUrl(e);
+      openOutlookUrl(outlookUrl(e));
     });
     return;
   }
@@ -1078,7 +1085,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.12.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.13.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
