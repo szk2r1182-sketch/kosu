@@ -1,0 +1,4 @@
+# 個人のフォルダパスが入るため、リポジトリには含めない
+config.json
+state.json
+sync.log

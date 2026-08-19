@@ -1,0 +1,12 @@
+{
+  "_説明": "このファイルをコピーして config.json という名前で保存し、パスを自分の環境に書き換えてください。setup.ps1 を使えば自動で作られます。",
+
+  "inbox_dir": "%USERPROFILE%\\Desktop\\Obsidian取り込みBOX",
+  "vault_dir": "%USERPROFILE%\\OneDrive - SUBARU CORPORATION\\ドキュメント\\Obsidian\\アレクサンドリア図書館",
+
+  "subfolder": "Inbox/NotebookLM",
+  "tags": ["notebooklm", "inbox"],
+  "archive_inputs": true,
+  "filename_template": "{date}_{title}",
+  "max_title_length": 80
+}
