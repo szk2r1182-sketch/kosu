@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.16.0 (2026-08-27): 工数マトリクスを日付単位で選べるようにした（直近7日分の日付チップ）。前日や先週金曜の分を後から選んでOutlookへ送信でき、終日予定はその日の日付で登録される。マトリクス送信済みの日を記録し、未送信の日をホーム画面とマトリクス画面で警告表示。「まとめて」タブで直近7日／今週の合算も従来どおり確認できる。
+  ver.1.17.0 (2026-08-28): 工数マトリクスを日次／週次／月次の3タブに再構成。価値区分を積み上げた推移グラフ（棒をタップで期間切替）、構成比％の併記とヒートマップ、前回記録日・先週・先月との増減表示、付加価値割合の目標・記録カバー率・連続記録日数、PJ別の配分バー、変化を要約する一言コメントを追加。CSV/Markdown/Outlook出力にも構成比と前期間比を反映。設定に所定労働時間と付加価値の目標を追加。
 -->
 <style>
   :root{
@@ -253,6 +253,54 @@
   .sumcell .k{font-size:10px;color:var(--mute);line-height:1.25;word-break:break-word;}
   .sumcell .v{font-family:var(--mono);font-size:17px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums;}
 
+  /* ── 推移グラフ ── */
+  .trendwrap{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 6px 6px;}
+  .trendwrap svg{display:block;}
+  .legend{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 6px 2px;}
+  .lg{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--mute);}
+  .lg i{width:9px;height:9px;border-radius:2px;display:inline-block;}
+  .lgnote{margin-left:auto;font-size:10px;color:#5A6673;}
+
+  .selline{margin:10px 0 2px;font-size:14px;}
+  .selline .ok{color:var(--ok);font-size:12px;}
+  .selline .al{color:var(--amber);font-size:12px;}
+
+  /* ── 数値＋構成比＋増減 ── */
+  .hv{display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .pv{display:block;font-size:9.5px;color:var(--mute);font-family:var(--sans);line-height:1.3;margin-top:1px;}
+  .dv{display:block;font-size:9.5px;font-family:var(--mono);line-height:1.3;margin-top:1px;}
+  .dv.up{color:#E0A64B;}
+  .dv.down{color:#6E9CD2;}
+  .dv.flat{color:#5A6673;}
+  .mtx td .hv{font-size:13px;}
+  .sumcell .hv{font-size:17px;font-weight:600;}
+
+  /* ── 価値区分の内訳バー ── */
+  .vbars{margin-top:12px;}
+  .vrow{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+  .vrow.dim{opacity:.5;}
+  .vlab{flex:0 0 52px;font-size:11px;color:var(--mute);text-align:right;}
+  .vbar{flex:1;display:flex;height:20px;border-radius:5px;overflow:hidden;background:var(--panel);}
+  .vseg{display:flex;align-items:center;justify-content:center;font-size:10px;color:#12161B;font-weight:700;}
+  .vseg.add{background:#3FB68B;}
+  .vseg.keep{background:#6E9CD2;}
+  .vseg.waste{background:#C97A9E;}
+  .vempty{font-size:10px;color:#4C5967;padding-left:8px;line-height:20px;}
+  .fb{margin-top:8px;font-size:12px;line-height:1.6;color:var(--txt);
+      background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);
+      border-radius:8px;padding:8px 10px;}
+  .pcttoggle{display:flex;justify-content:flex-end;margin-top:12px;}
+  .pcttoggle .mini{padding:7px 12px;font-size:12px;}
+
+  /* ── PJ別バー ── */
+  .pjrow{margin-bottom:8px;}
+  .pjtop{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:3px;gap:8px;}
+  .pjn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pjv{flex:0 0 auto;color:var(--mute);font-family:var(--mono);font-size:12px;display:flex;align-items:baseline;gap:6px;}
+  .pjv .dv{display:inline;}
+  .pjbar{height:6px;background:var(--panel);border-radius:3px;overflow:hidden;}
+  .pjbar span{display:block;height:100%;background:var(--amber);}
+
   /* ── 転送バー（固定） ── */
   .dock{
     position:fixed;left:0;right:0;bottom:0;
@@ -383,7 +431,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.16.0</div>
+  <div class="ver">ver.1.17.0</div>
 </div>
 
 <div class="dock">
@@ -436,10 +484,12 @@ if(!S.mode) S.mode='outlook';
 S.mode='outlook'; // 転送はOutlook直リンクに固定（標準カレンダー方式は廃止）
 if(!S.favs) S.favs=[];
 if(typeof S.alertMin!=='number') S.alertMin=60;
-// マトリクスの表示対象（既定：日ごと・当日）
-if(S.mtxMode!=='sum') S.mtxMode='day';
-if(!S.mtxSum) S.mtxSum='week7';
+// マトリクスの表示対象（既定：日次・当日）
+if(['day','week','month'].indexOf(S.mtxMode)<0) S.mtxMode='day';
 if(!S.mtxSent||typeof S.mtxSent!=='object') S.mtxSent={};
+if(typeof S.mtxPct!=='boolean') S.mtxPct=true;      // 構成比の表示
+if(typeof S.workH!=='number') S.workH=8;            // 1日の所定労働時間（記録カバー率の分母）
+if(typeof S.vhTarget!=='number') S.vhTarget=50;     // 付加価値割合の目標(%)
 
 const VLABEL={add:'付加価値',keep:'維持管理',waste:'ムダ'};
 const VCLASS={add:'v-add',keep:'v-keep',waste:'v-waste'};
@@ -673,17 +723,19 @@ function todayEntries(){
   const t=dkey(Date.now());
   return S.entries.filter(e=>dkey(e.start)===t).sort((a,b)=>b.start-a.start);
 }
-/* ── マトリクスの表示対象（日ごと／まとめて） ──────────────────
-   記録そのものは削除されないため、日付を選び直せば過去分もいつでも再表示・再送信できる */
-const RANGE_LABEL={week7:'直近7日',thisweek:'今週'};
+/* ── 期間モデル（日次／週次／月次） ───────────────────────────
+   記録は削除されないため、期間を選び直せばいつでも再表示・再送信できる */
+const MODE_LABEL={day:'日次',week:'週次',month:'月次'};
+const PREV_LABEL={day:'前回記録日',week:'先週',month:'先月'};
 const WD=['日','月','火','水','木','金','土'];
 function dayStart(t){const d=new Date(t);d.setHours(0,0,0,0);return d.getTime();}
-// 日付キー（YYYY-MM-DD）まわり
+function dstart(dk){const p=dk.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]).getTime();}
 function dkeyOffset(off){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-off);return dkey(d.getTime());}
 function dkText(dk){const p=dk.split('-').map(Number);return p[1]+'/'+p[2]+'('+WD[new Date(p[0],p[1]-1,p[2]).getDay()]+')';}
+const md_=t=>{const d=new Date(t);return (new Date(t).getMonth()+1)+'/'+new Date(t).getDate();};
 function dayEntries(dk){ return S.entries.filter(e=>dkey(e.start)===dk).sort((a,b)=>b.start-a.start); }
 function recentDayKeys(n){ const a=[]; for(let i=0;i<(n||7);i++) a.push(dkeyOffset(i)); return a; } // 新しい順
-function dayTotalH(dk){ const m=buildMatrix(dayEntries(dk),'day'); return m.grand; }
+function dayTotalH(dk){ return buildMatrix(dayEntries(dk),'day').grand; }
 // マトリクスをOutlookへ送った日の記録（記録単位のsentとは別管理）
 function isDaySent(dk){ return !!(S.mtxSent&&S.mtxSent[dk]); }
 function markDaySent(dk){ if(!S.mtxSent) S.mtxSent={}; S.mtxSent[dk]=Date.now(); save(); }
@@ -693,55 +745,108 @@ function unsentDays(){
   const today=dkeyOffset(0);
   return recentDayKeys(7).filter(dk=>dk!==today&&dayEntries(dk).length>0&&!isDaySent(dk));
 }
-// 期間の開始・終了（終了は「その日の23:59:59.999」）を返す
-function rangeSpan(range){
-  const now=Date.now(), today=dayStart(now);
-  if(range==='thisweek'){
-    const dow=new Date(today).getDay();            // 0=日
-    const mon=today-((dow+6)%7)*86400000;          // 月曜起点
-    return {from:mon,to:today+86399999};
-  }
-  if(range==='week7') return {from:today-6*86400000,to:today+86399999};
-  return {from:today,to:today+86399999};
+// 週キー＝その週の月曜の日付キー
+function weekKeyOf(t){const d=dayStart(t),dow=new Date(d).getDay();return dkey(d-((dow+6)%7)*86400000);}
+function curKey(mode){const n=Date.now();return mode==='week'?weekKeyOf(n):mode==='month'?monthKey(n):dkey(n);}
+function periodSpan(mode,key){
+  if(mode==='week'){const f=dstart(key);return {from:f,to:f+7*86400000-1};}
+  if(mode==='month'){const p=key.split('-').map(Number);return {from:new Date(p[0],p[1]-1,1).getTime(),to:new Date(p[0],p[1],1).getTime()-1};}
+  const f=dstart(key); return {from:f,to:f+86399999};
 }
-function rangeEntries(range){
-  const s=rangeSpan(range);
+function periodEntries(mode,key){
+  const s=periodSpan(mode,key);
   return S.entries.filter(e=>e.start>=s.from&&e.start<=s.to).sort((a,b)=>b.start-a.start);
 }
-const md_=t=>{const d=new Date(t);return pad(d.getMonth()+1)+'/'+pad(d.getDate());};
-function rangeText(range){
-  const s=rangeSpan(range);
-  return md_(s.from)+'〜'+md_(Date.now());
+function periodShort(mode,key){ // グラフの軸ラベル
+  if(mode==='week'){const s=periodSpan('week',key);return md_(s.from)+'〜';}
+  if(mode==='month'){return Number(key.split('-')[1])+'月';}
+  return dkText(key);
 }
-// 期間内に記録のあった日数（1日あたり平均の算出用）
-function rangeDayCount(list){ return new Set(list.map(e=>dkey(e.start))).size; }
+function periodTitle(mode,key){
+  if(mode==='week'){const s=periodSpan('week',key);return md_(s.from)+'〜'+md_(s.to)+' の週';}
+  if(mode==='month'){const p=key.split('-');return p[0]+'年'+Number(p[1])+'月';}
+  return key+' '+dkText(key);
+}
+function periodKeys(mode,n){ // 古い→新しい
+  const a=[],now=Date.now();
+  for(let i=n-1;i>=0;i--){
+    if(mode==='week') a.push(dkey(dstart(weekKeyOf(now))-i*7*86400000));
+    else if(mode==='month'){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);a.push(monthKey(d.getTime()));}
+    else a.push(dkeyOffset(i));
+  }
+  return a;
+}
+// 比較対象の期間（日次は直前の「記録がある日」＝土日や休みを飛ばす）
+function prevPeriodKey(mode,key){
+  if(mode==='week') return dkey(dstart(key)-7*86400000);
+  if(mode==='month'){const p=key.split('-').map(Number);return monthKey(new Date(p[0],p[1]-2,1).getTime());}
+  const t=dstart(key);
+  for(let i=1;i<=21;i++){ const dk=dkey(t-i*86400000); if(dayEntries(dk).length) return dk; }
+  return null;
+}
+/* 集計（ms単位）。マトリクスの丸めとは別に、構成比・比較用に使う */
+function agg(list){
+  const byV={add:0,keep:0,waste:0},byPj={},byCat={};
+  let total=0;
+  list.forEach(e=>{ const ms=e.end-e.start,c=catOf(e.cat);
+    total+=ms; byV[c.v]+=ms; byPj[e.pj]=(byPj[e.pj]||0)+ms; byCat[e.cat]=(byCat[e.cat]||0)+ms; });
+  return {total,byV,byPj,byCat,days:new Set(list.map(e=>dkey(e.start))).size,n:list.length};
+}
+function pctOf(part,total){ return total>0?Math.round(part/total*100):0; }
+// 期間内の平日数（未来の日は数えない）
+function weekdayCount(mode,key){
+  const s=periodSpan(mode,key), end=Math.min(s.to,Date.now());
+  let n=0;
+  for(let t=s.from;t<=end;t+=86400000){ const w=new Date(t).getDay(); if(w!==0&&w!==6) n++; }
+  return Math.max(n,0);
+}
+// 連続記録日数（土日は飛ばす／今日はまだ未記録でも途切れ扱いにしない）
+function streakDays(){
+  let n=0;
+  for(let i=0;i<90;i++){
+    const dk=dkeyOffset(i), w=new Date(dstart(dk)).getDay();
+    if(dayEntries(dk).length){ n++; continue; }
+    if(i===0) continue;
+    if(w===0||w===6) continue;
+    break;
+  }
+  return n;
+}
+// 増減の表示（増＝暖色／減＝寒色。良し悪しは分類によるため中立色）
+function diffTag(curH,prevH,unit){
+  if(prevH==null) return '';
+  const d=Math.round((curH-prevH)*10)/10;
+  if(Math.abs(d)<0.05) return '<span class="dv flat">±0</span>';
+  return '<span class="dv '+(d>0?'up':'down')+'">'+(d>0?'▲+':'▼')+fmtH(Math.abs(d)*(d>0?1:1))+(unit||'')+'</span>';
+}
+function diffPt(cur,prev){
+  if(prev==null) return '';
+  const d=cur-prev;
+  if(d===0) return '<span class="dv flat">±0pt</span>';
+  return '<span class="dv '+(d>0?'up':'down')+'">'+(d>0?'▲+':'▼')+Math.abs(d)+'pt</span>';
+}
 
-/* 現在の選択（日ごと＝1日分／まとめて＝直近7日・今週）を1か所にまとめる。
+/* 現在の選択（日次／週次／月次 × 期間キー）を1か所にまとめる。
    画面表示・CSV・Markdown・Outlook送信はすべてこの情報を参照する */
 function selInfo(){
-  if(S.mtxMode==='sum'){
-    const r=(S.mtxSum==='thisweek')?'thisweek':'week7';
-    const s=rangeSpan(r), today=dkey(Date.now()), txt=rangeText(r);
-    return {mode:'sum',range:r,list:rangeEntries(r),
-      title:RANGE_LABEL[r]+'（'+txt+'）',
-      caption:'／'+RANGE_LABEL[r]+'分（'+txt+'）',
-      head:RANGE_LABEL[r]+'の実績マトリクス（'+txt+'）',
-      fileKey:dkey(s.from)+'_'+today, outDate:today,
-      subject:'#kosu '+RANGE_LABEL[r]+'実績サマリー '+dkey(s.from)+'〜'+today,
-      tagHead:'#kosu-matrix 期間=['+dkey(s.from)+'〜'+today+']'};
-  }
-  const dk=S.mtxDay||dkeyOffset(0);
-  return {mode:'day',dk,list:dayEntries(dk),
-    title:dk+' '+dkText(dk),
-    caption:'／'+dk+' '+dkText(dk)+' の1日分',
-    head:dk+'（'+dkText(dk)+'）の実績マトリクス',
-    fileKey:dk, outDate:dk,
-    subject:'#kosu 日次実績サマリー '+dk,
-    tagHead:'#kosu-matrix 日付=['+dk+']'};
+  const mode=['day','week','month'].indexOf(S.mtxMode)>=0?S.mtxMode:'day';
+  const keys=periodKeys(mode,12);
+  const key=(S.mtxKey&&keys.indexOf(S.mtxKey)>=0)?S.mtxKey:curKey(mode);
+  const s=periodSpan(mode,key), list=periodEntries(mode,key);
+  const title=periodTitle(mode,key);
+  const endD=dkey(Math.min(s.to,Date.now()));
+  return {mode,key,list,span:s,title,
+    caption:'／'+MODE_LABEL[mode]+'：'+title,
+    head:title+' の実績マトリクス',
+    fileKey:mode==='day'?key:(dkey(s.from)+'_'+endD),
+    outDate:mode==='day'?key:endD,
+    subject:'#kosu '+MODE_LABEL[mode]+'実績サマリー '+title,
+    tagHead:mode==='day'?('#kosu-matrix 日付=['+key+']'):('#kosu-matrix 期間=['+dkey(s.from)+'〜'+dkey(s.to)+']')};
 }
 
 // マトリクスHTMLを生成（横:PJ × 縦:業務分類、0.1h刻み、行/列/総合計は丸めセルの合計）
-function buildMatrix(list, period='day', capSuffix){
+function buildMatrix(list, period='day', capSuffix, opt){
+  opt=opt||{};
   const SEPM='\u0001';
   const cellMs={};
   list.forEach(e=>{ const k=e.pj+SEPM+e.cat; cellMs[k]=(cellMs[k]||0)+(e.end-e.start); });
@@ -755,26 +860,41 @@ function buildMatrix(list, period='day', capSuffix){
     pjs.forEach(pj=>{ const k=pj+SEPM+cat; if(cellMs[k]!=null){ const v=toDecH(cellMs[k]); cellVal[k]=v; rt+=v; colTot[pj]+=v; } });
     rowTot[cat]=rt; grand+=rt;
   });
-  if(!list.length) return {html:'<div class="empty">まだ記録がありません</div>',grand:0,hasData:false,pjs:[],cats:[],cellVal:{},rowTot:{},colTot:{}};
+  if(!list.length) return {html:'<div class="empty">まだ記録がありません</div>',grand:0,hasData:false,pjs:[],cats:[],cellVal:{},rowTot:{},colTot:{},SEPM:SEPM};
+  const pctv=v=>grand>0?Math.round(v/grand*100):0;
+  const maxCell=Math.max.apply(null,[0.1].concat(Object.keys(cellVal).map(k=>cellVal[k])));
+  const showPct=!!opt.pct, heat=!!opt.heat;
   let thead='<tr><th class="cnr">業務分類 ＼ PJ</th>';
   pjs.forEach(pj=>{ thead+='<th>'+esc(pj)+'</th>'; });
   thead+='<th class="tot">合計</th></tr>';
   let tbody='';
   cats.forEach(cat=>{
+    const vc=catOf(cat).v;
     tbody+='<tr><th>'+esc(cat)+'</th>';
-    pjs.forEach(pj=>{ const v=cellVal[pj+SEPM+cat]; tbody+=(v==null)?'<td class="empty">–</td>':'<td'+(v<0.05?' class="z"':'')+'>'+fmtH(v)+'</td>'; });
-    tbody+='<td class="tot">'+fmtH(rowTot[cat])+'</td></tr>';
+    pjs.forEach(pj=>{
+      const v=cellVal[pj+SEPM+cat];
+      if(v==null){ tbody+='<td class="empty">–</td>'; return; }
+      const bg=heat?' style="background:rgba(255,176,32,'+(0.04+0.28*(v/maxCell)).toFixed(3)+')"':'';
+      tbody+='<td'+(v<0.05?' class="z"':'')+bg+'><span class="hv">'+fmtH(v)+'</span>'+
+             (showPct?'<span class="pv">'+pctv(v)+'%</span>':'')+'</td>';
+    });
+    tbody+='<td class="tot"><span class="hv">'+fmtH(rowTot[cat])+'</span>'+
+           (showPct?'<span class="pv">'+pctv(rowTot[cat])+'%</span>':'')+
+           (opt.prevRow?diffTag(rowTot[cat],opt.prevRow[cat]||0):'')+'</td></tr>';
   });
   let tfoot='<tr><th>合計</th>';
-  pjs.forEach(pj=>{ tfoot+='<td class="tot">'+fmtH(colTot[pj])+'</td>'; });
-  tfoot+='<td class="tot">'+fmtH(grand)+'</td></tr>';
+  pjs.forEach(pj=>{ tfoot+='<td class="tot"><span class="hv">'+fmtH(colTot[pj])+'</span>'+
+      (showPct?'<span class="pv">'+pctv(colTot[pj])+'%</span>':'')+
+      (opt.prevCol?diffTag(colTot[pj],opt.prevCol[pj]||0):'')+'</td>'; });
+  tfoot+='<td class="tot"><span class="hv">'+fmtH(grand)+'</span>'+(showPct?'<span class="pv">100%</span>':'')+
+      (opt.prevGrand!=null?diffTag(grand,opt.prevGrand):'')+'</td></tr>';
   const caption='単位：h（0.1h＝6分刻み）'+(capSuffix||'');
   const html='<div class="mtx-wrap"><table class="mtx">'+
     '<caption>'+caption+'</caption>'+
     '<thead>'+thead+'</thead><tbody>'+tbody+'</tbody><tfoot>'+tfoot+'</tfoot></table></div>';
-  // cellValのキーはSEPM区切り。送信・書き出し用に pj/cat 別の生データも返す
   return {html,grand,hasData:true,pjs,cats,cellVal,rowTot,colTot,SEPM};
 }
+
 /* 月次マトリクス CSV/MD出力 */
 function matrixMonthlyExportCsv(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
@@ -800,7 +920,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.16.0 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.17.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -825,50 +945,148 @@ function openMatrixMonthly(mk){
 }
 
 // マトリクスを全画面（シート）で開く
-function setMtxMode(mode){ S.mtxMode=mode; if(mode==='day'&&!S.mtxDay) S.mtxDay=dkeyOffset(0); save(); openMatrix(); render(); }
-function setMtxDay(dk){ S.mtxMode='day'; S.mtxDay=dk; save(); openMatrix(); render(); }
-function setMtxSum(r){ S.mtxMode='sum'; S.mtxSum=r; save(); openMatrix(); render(); }
+function setMtxMode(mode){ S.mtxMode=mode; S.mtxKey=null; save(); openMatrix(); render(); }
+function setMtxKey(k){ S.mtxKey=k; save(); openMatrix(); render(); }
+function toggleMtxPct(){ S.mtxPct=(S.mtxPct===false); save(); openMatrix(); }
+
+/* 推移グラフ（価値区分の積み上げ棒）。棒をタップするとその期間に切り替わる＝期間選択も兼ねる */
+function trendChart(mode,selKey){
+  const n=mode==='day'?7:6;
+  const keys=periodKeys(mode,n);
+  const data=keys.map(k=>({k,g:agg(periodEntries(mode,k))}));
+  const maxH=Math.max.apply(null,[0.5].concat(data.map(d=>d.g.total/3600000)));
+  const CW=44, H=132, TOP=20, BH=76, BASE=TOP+BH, BW=24;
+  const COL={add:'#3FB68B',keep:'#6E9CD2',waste:'#C97A9E'};
+  let g='';
+  data.forEach((d,i)=>{
+    const x=i*CW+(CW-BW)/2, tot=d.g.total/3600000, on=d.k===selKey;
+    if(on) g+='<rect x="'+(i*CW+2)+'" y="'+(TOP-14)+'" width="'+(CW-4)+'" height="'+(H-TOP+6)+'" rx="8" fill="rgba(255,176,32,.10)" stroke="#FFB020" stroke-width="1"/>';
+    let y=BASE;
+    if(tot>0){
+      ['waste','keep','add'].forEach(v=>{
+        const hh=(d.g.byV[v]/3600000)/maxH*BH;
+        if(hh>0.4){ y-=hh; g+='<rect x="'+x+'" y="'+y.toFixed(1)+'" width="'+BW+'" height="'+hh.toFixed(1)+'" fill="'+COL[v]+'" opacity="'+(on?1:.62)+'"/>'; }
+      });
+      g+='<text x="'+(x+BW/2)+'" y="'+(y-4).toFixed(1)+'" text-anchor="middle" font-size="10" fill="'+(on?'#FFB020':'#7D8894')+'">'+fmtH(tot)+'</text>';
+    }else{
+      g+='<line x1="'+x+'" y1="'+BASE+'" x2="'+(x+BW)+'" y2="'+BASE+'" stroke="#3A434F" stroke-width="2"/>';
+    }
+    const unsent=mode==='day'&&tot>0&&d.k!==dkeyOffset(0)&&!isDaySent(d.k);
+    g+='<text x="'+(i*CW+CW/2)+'" y="'+(H-12)+'" text-anchor="middle" font-size="9.5" fill="'+(on?'#E6EDF3':'#7D8894')+'">'+esc(periodShort(mode,d.k))+'</text>';
+    if(mode==='day'){
+      g+='<text x="'+(i*CW+CW/2)+'" y="'+(H-2)+'" text-anchor="middle" font-size="8.5" fill="'+(unsent?'#FFB020':'#3FB68B')+'">'+(tot>0?(isDaySent(d.k)?'送信済':(d.k===dkeyOffset(0)?'':'未送信')):'')+'</text>';
+    }
+    g+='<rect x="'+(i*CW)+'" y="0" width="'+CW+'" height="'+H+'" fill="transparent" style="cursor:pointer" onclick="setMtxKey(\''+d.k+'\')"></rect>';
+  });
+  return '<div class="trendwrap"><svg viewBox="0 0 '+(n*CW)+' '+H+'" width="100%" height="132" preserveAspectRatio="xMidYMid meet">'+
+         '<line x1="0" y1="'+BASE+'" x2="'+(n*CW)+'" y2="'+BASE+'" stroke="#2E3944" stroke-width="1"/>'+g+'</svg>'+
+         '<div class="legend"><span class="lg"><i style="background:#3FB68B"></i>付加価値</span>'+
+         '<span class="lg"><i style="background:#6E9CD2"></i>維持管理</span>'+
+         '<span class="lg"><i style="background:#C97A9E"></i>ムダ</span>'+
+         '<span class="lgnote">棒をタップで期間切替</span></div></div>';
+}
+
+/* 価値区分の内訳バー（今回／前回を上下に並べて比較） */
+function valueBars(a,pa,prevLabel){
+  const row=(g,label,dim)=>{
+    if(!g||!g.total) return '<div class="vrow'+(dim?' dim':'')+'"><span class="vlab">'+label+'</span><div class="vbar"><span class="vempty">記録なし</span></div></div>';
+    const p=v=>pctOf(g.byV[v],g.total);
+    return '<div class="vrow'+(dim?' dim':'')+'"><span class="vlab">'+label+'</span><div class="vbar">'+
+      ['add','keep','waste'].map(v=>{
+        const w=p(v); if(!w) return '';
+        return '<span class="vseg '+v+'" style="width:'+w+'%">'+(w>=12?w+'%':'')+'</span>';
+      }).join('')+'</div></div>';
+  };
+  return '<div class="vbars">'+row(a,'今回')+row(pa,prevLabel,true)+'</div>';
+}
+
+/* PJ別の内訳（構成比＋前期間比） */
+function pjBars(a,pa){
+  const keys=Object.keys(a.byPj).sort((x,y)=>a.byPj[y]-a.byPj[x]);
+  if(!keys.length) return '';
+  let h='<h2 style="margin:14px 0 6px">PJ別の配分</h2>';
+  keys.forEach(k=>{
+    const p=pctOf(a.byPj[k],a.total);
+    h+='<div class="pjrow"><div class="pjtop"><span class="pjn">'+esc(k)+'</span>'+
+       '<span class="pjv">'+fmtH(a.byPj[k]/3600000)+'h ・'+p+'% '+(pa?diffTag(a.byPj[k]/3600000,(pa.byPj[k]||0)/3600000):'')+'</span></div>'+
+       '<div class="pjbar"><span style="width:'+p+'%"></span></div></div>';
+  });
+  return h;
+}
+
+/* 一言フィードバック（記入の手応えを言葉にする） */
+function feedbackText(mode,a,pa){
+  if(!a.total) return '記録がありません。まず1件打刻すると、ここに前回との比較が出ます。';
+  const out=[];
+  if(pa&&pa.total){
+    const dh=(a.total-pa.total)/3600000;
+    out.push(PREV_LABEL[mode]+'と比べて合計 '+(dh>=0?'+':'−')+fmtH(Math.abs(dh))+'h');
+    const vh=pctOf(a.byV.add,a.total), pvh=pctOf(pa.byV.add,pa.total);
+    out.push('付加価値の割合 '+vh+'%（'+(vh-pvh>=0?'+':'−')+Math.abs(vh-pvh)+'pt）');
+    const cats={}; Object.keys(a.byCat).forEach(c=>cats[c]=1); Object.keys(pa.byCat).forEach(c=>cats[c]=1);
+    let bc=null,bd=0;
+    Object.keys(cats).forEach(c=>{ const d=((a.byCat[c]||0)-(pa.byCat[c]||0))/3600000; if(Math.abs(d)>Math.abs(bd)){bd=d;bc=c;} });
+    if(bc&&Math.abs(bd)>=0.1) out.push('変化が大きいのは「'+bc+'」'+(bd>0?'+':'−')+fmtH(Math.abs(bd))+'h');
+  }else{
+    out.push('比較できる'+PREV_LABEL[mode]+'の記録がありません');
+  }
+  return out.join('　／　');
+}
+
 function openMatrix(){
-  const sel=selInfo();
-  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
-  let h='<h3>工数マトリクス（PC入力用）</h3>';
-  // 送り忘れの案内（今日以外で記録があるのに未送信の日）
+  const sel=selInfo(), mode=sel.mode, key=sel.key;
+  const a=agg(sel.list);
+  const pk=prevPeriodKey(mode,key);
+  const pa=pk?agg(periodEntries(mode,pk)):null;
+  const prevRow={},prevCol={};
+  if(pa){ Object.keys(pa.byCat).forEach(c=>prevRow[c]=pa.byCat[c]/3600000);
+          Object.keys(pa.byPj).forEach(k=>prevCol[k]=pa.byPj[k]/3600000); }
+  const showPct=S.mtxPct!==false;
+  const m=buildMatrix(sel.list, mode, sel.caption,
+      {pct:showPct, heat:true, prevRow:pa?prevRow:null, prevCol:pa?prevCol:null,
+       prevGrand:pa?pa.total/3600000:null});
+
+  let h='<h3>工数マトリクス</h3>';
   const un=unsentDays();
   if(un.length){
     h+='<div class="warn" style="margin-bottom:10px"><b>未送信の日があります</b><br>'+
-       un.map(dk=>dkText(dk)).join('・')+' のマトリクスは、まだOutlookへ送っていません。'+
-       '下の日付を選ぶとその日の分を送れます。</div>';
+       un.map(dk=>dkText(dk)).join('・')+' はまだOutlookへ送っていません。グラフの棒をタップするとその日に切り替わります。</div>';
   }
-  // 日ごと／まとめて
-  h+='<div class="seg">'+
-     '<button class="segbtn'+(sel.mode==='day'?' on':'')+'" onclick="setMtxMode(\'day\')">日ごと</button>'+
-     '<button class="segbtn'+(sel.mode==='sum'?' on':'')+'" onclick="setMtxMode(\'sum\')">まとめて</button></div>';
-  if(sel.mode==='day'){
-    h+='<div class="chips">'+recentDayKeys(7).map(dk=>{
-      const tot=dayTotalH(dk), has=tot>0, unsent=has&&dk!==dkeyOffset(0)&&!isDaySent(dk);
-      return '<button class="chip'+(dk===sel.dk?' on':'')+(has?'':' none')+'" onclick="setMtxDay(\''+dk+'\')">'+
-        '<span class="d">'+dkText(dk)+'</span>'+
-        '<span class="h">'+(has?fmtH(tot)+'h':'–')+'</span>'+
-        '<span class="st">'+(!has?'&nbsp;':isDaySent(dk)?'✓送信済':unsent?'⚠未送信':'&nbsp;')+'</span></button>';
-    }).join('')+'</div>';
+  h+='<div class="seg">'+['day','week','month'].map(md=>
+      '<button class="segbtn'+(md===mode?' on':'')+'" onclick="setMtxMode(\''+md+'\')">'+MODE_LABEL[md]+'</button>').join('')+'</div>';
+  h+=trendChart(mode,key);
+  h+='<div class="selline"><b>'+esc(sel.title)+'</b>'+
+     (mode==='day'&&key!==dkeyOffset(0)?'　'+(isDaySent(key)?'<span class="ok">✓ 送信済</span>':'<span class="al">⚠ 未送信</span>'):'')+'</div>';
+
+  // ── KPIタイル ──
+  const vh=pctOf(a.byV.add,a.total), pvh=pa&&pa.total?pctOf(pa.byV.add,pa.total):null;
+  const target=S.vhTarget||50, workH=S.workH||8;
+  const tiles=[];
+  tiles.push(cell('合計','<span class="hv">'+fmtH(a.total/3600000)+'h</span>'+(pa?diffTag(a.total/3600000,pa.total/3600000,'h'):''),true));
+  tiles.push(cell('付加価値の割合','<span class="hv" style="color:'+(vh>=target?'#3FB68B':'#E6EDF3')+'">'+vh+'%</span>'+
+     (pvh!=null?diffPt(vh,pvh):'')+'<span class="pv">目標'+target+'%'+(vh>=target?' 達成':'')+'</span>'));
+  if(mode==='day'){
+    const cov=Math.min(999,Math.round(a.total/3600000/workH*100));
+    tiles.push(cell('記録カバー率','<span class="hv">'+cov+'%</span><span class="pv">'+fmtH(a.total/3600000)+' / '+workH+'h</span>'));
   }else{
-    h+='<div class="seg sub">'+['week7','thisweek'].map(r=>
-      '<button class="segbtn'+(sel.range===r?' on':'')+'" onclick="setMtxSum(\''+r+'\')">'+RANGE_LABEL[r]+'</button>').join('')+'</div>';
+    const wd=weekdayCount(mode,key);
+    tiles.push(cell('記録日数','<span class="hv">'+a.days+'</span><span class="pv">平日'+wd+'日中</span>'));
+    tiles.push(cell('1日平均','<span class="hv">'+fmtH(a.days?a.total/3600000/a.days:0)+'h</span>'));
   }
-  h+='<div class="note" style="margin:8px 0 0">表示中：'+sel.title+
-     (sel.mode==='day'?(sel.dk===dkeyOffset(0)?'':'　'+(isDaySent(sel.dk)?'✓ Outlook送信済':'⚠ Outlook未送信')):'')+
-     '<br>記録は消えません。日付を選び直せば、前日や先週金曜の分もそのまま送れます。</div>';
-  if(sel.mode==='day'&&isDaySent(sel.dk)){
-    h+='<button class="mini" style="width:100%;margin-top:6px;font-size:13px;padding:9px" '+
-       'onclick="unmarkDaySent(\''+sel.dk+'\')">送信済のマークを取り消す</button>';
-  }
+  const st=streakDays();
+  if(st>0) tiles.push(cell('連続記録','<span class="hv">🔥'+st+'日</span>'));
+  h+='<div class="sum">'+tiles.join('')+'</div>';
+
+  // ── 価値区分の内訳 ──
+  h+=valueBars(a,pa,PREV_LABEL[mode]);
+  h+='<div class="fb">'+esc(feedbackText(mode,a,pa))+'</div>';
+
+  // ── マトリクス表 ──
+  h+='<div class="pcttoggle"><button class="mini" onclick="toggleMtxPct()">'+(showPct?'構成比を隠す':'構成比を表示')+'</button></div>';
   h+=m.html;
+
   if(m.hasData){
-    if(sel.mode==='sum'){
-      const days=rangeDayCount(sel.list);
-      h+='<div class="sum">'+cell('合計',fmtH(m.grand)+'h',true)+cell('記録日数',days+'日')+
-         cell('1日平均',fmtH(days?m.grand/days:0)+'h')+'</div>';
-    }
+    h+=pjBars(a,pa);
     h+='<div class="mtxsend">'+
        '<button class="mtxicon amber" onclick="matrixSendOutlook()" aria-label="表示中の期間のマトリクスをOutlookへ送る">'+
          '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>'+
@@ -880,6 +1098,9 @@ function openMatrix(){
          '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6h6"></path><path d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"></path><path d="M8 13h8M8 17h5"></path></svg>'+
          '<span>MD</span></button>'+
        '</div>';
+    if(mode==='day'&&isDaySent(key)){
+      h+='<button class="mini" style="width:100%;margin-top:8px;font-size:13px;padding:9px" onclick="unmarkDaySent(\''+key+'\')">送信済のマークを取り消す</button>';
+    }
   }
   h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
   openSheet(h);
@@ -896,39 +1117,52 @@ function matrixRows(m){
 }
 function matrixExportCsv(){
   const sel=selInfo();
-  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
+  const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  let csv='\ufeff業務分類,'+m.pjs.map(csvCell).join(',')+',合計\r\n';
+  const pc=v=>m.grand>0?Math.round(v/m.grand*100)+'%':'';
+  let csv='\ufeff業務分類,'+m.pjs.map(csvCell).join(',')+',合計,構成比\r\n';
   matrixRows(m).forEach(r=>{
-    csv+=csvCell(r.cat)+','+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'').join(',')+','+fmtH(r.tot)+'\r\n';
+    csv+=csvCell(r.cat)+','+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'').join(',')+','+fmtH(r.tot)+','+pc(r.tot)+'\r\n';
   });
-  csv+='合計,'+m.pjs.map(pj=>fmtH(m.colTot[pj])).join(',')+','+fmtH(m.grand)+'\r\n';
+  csv+='合計,'+m.pjs.map(pj=>fmtH(m.colTot[pj])).join(',')+','+fmtH(m.grand)+',100%\r\n';
+  csv+='構成比,'+m.pjs.map(pj=>pc(m.colTot[pj])).join(',')+',100%,\r\n';
   downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.csv');
   toast(sel.title+' のマトリクスをCSVで書き出しました');
 }
 function matrixMdText(m, sel){
+  const pc=v=>m.grand>0?Math.round(v/m.grand*100)+'%':'';
+  const a=agg(sel.list), pk=prevPeriodKey(sel.mode,sel.key), pa=pk?agg(periodEntries(sel.mode,pk)):null;
   let md='# 工数マトリクス '+sel.title+'\n\n';
-  md+='| 業務分類 ＼ PJ | '+m.pjs.join(' | ')+' | 合計 |\n';
-  md+='|---|'+m.pjs.map(()=>'--:').join('|')+'|--:|\n';
+  md+='- 合計: '+fmtH(m.grand)+'h';
+  if(pa&&pa.total) md+='（'+PREV_LABEL[sel.mode]+'比 '+((a.total-pa.total)>=0?'+':'−')+fmtH(Math.abs(a.total-pa.total)/3600000)+'h）';
+  md+='\n- 付加価値の割合: '+pctOf(a.byV.add,a.total)+'%';
+  if(pa&&pa.total) md+='（'+PREV_LABEL[sel.mode]+' '+pctOf(pa.byV.add,pa.total)+'%）';
+  md+='\n- 内訳: 付加価値 '+pctOf(a.byV.add,a.total)+'% / 維持管理 '+pctOf(a.byV.keep,a.total)+'% / ムダ '+pctOf(a.byV.waste,a.total)+'%\n\n';
+  md+='| 業務分類 ＼ PJ | '+m.pjs.join(' | ')+' | 合計 | 構成比 |\n';
+  md+='|---|'+m.pjs.map(()=>'--:').join('|')+'|--:|--:|\n';
   matrixRows(m).forEach(r=>{
-    md+='| '+r.cat+' | '+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'–').join(' | ')+' | '+fmtH(r.tot)+' |\n';
+    md+='| '+r.cat+' | '+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'–').join(' | ')+' | '+fmtH(r.tot)+' | '+pc(r.tot)+' |\n';
   });
-  md+='| **合計** | '+m.pjs.map(pj=>'**'+fmtH(m.colTot[pj])+'**').join(' | ')+' | **'+fmtH(m.grand)+'** |\n';
+  md+='| **合計** | '+m.pjs.map(pj=>'**'+fmtH(m.colTot[pj])+'**').join(' | ')+' | **'+fmtH(m.grand)+'** | 100% |\n';
+  md+='| 構成比 | '+m.pjs.map(pj=>pc(m.colTot[pj])).join(' | ')+' | 100% |  |\n';
   return md;
 }
 function matrixExportMd(){
   const sel=selInfo();
-  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
+  const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.16.0 より出力_\n';
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.17.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
 // Outlook本文用：プロジェクトごとに読みやすくまとめたテキスト（表崩れ対策のため罫線表は使わない）
 // Outlook本文用：見たままの罫線表（HTML）で送る。予定の本文欄はHTMLとして解釈されるため実際の表になる
 function matrixBodyHtml(m, sel){
+  const a=agg(sel.list), pk=prevPeriodKey(sel.mode,sel.key), pa=pk?agg(periodEntries(sel.mode,pk)):null;
   let html='<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:13px;color:#222;">';
-  html+='<p style="margin:0 0 8px;font-weight:bold;">'+sel.head+'　合計 '+fmtH(m.grand)+'h</p>';
+  html+='<p style="margin:0 0 4px;font-weight:bold;">'+sel.head+'　合計 '+fmtH(m.grand)+'h</p>';
+  html+='<p style="margin:0 0 8px;color:#555;">付加価値 '+pctOf(a.byV.add,a.total)+'％ ／ 維持管理 '+pctOf(a.byV.keep,a.total)+'％ ／ ムダ '+pctOf(a.byV.waste,a.total)+'％'+
+        ((pa&&pa.total)?('　（'+PREV_LABEL[sel.mode]+'比 合計 '+((a.total-pa.total)>=0?'+':'−')+fmtH(Math.abs(a.total-pa.total)/3600000)+'h／付加価値 '+((pctOf(a.byV.add,a.total)-pctOf(pa.byV.add,pa.total))>=0?'+':'−')+Math.abs(pctOf(a.byV.add,a.total)-pctOf(pa.byV.add,pa.total))+'pt）'):'')+'</p>';
   html+='<table style="border-collapse:collapse;font-size:12px;" cellpadding="6" cellspacing="0">';
   html+='<tr><th style="border:1px solid #999;background:#f2f2f2;text-align:left;">業務分類＼PJ</th>';
   m.pjs.forEach(pj=>{ html+='<th style="border:1px solid #999;background:#f2f2f2;text-align:center;">'+esc(pj)+'</th>'; });
@@ -974,7 +1208,7 @@ function matrixOutlookUrl(m, sel){
 function matrixSendOutlook(){
   if(_outlookSendLock) return;
   const sel=selInfo();
-  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
+  const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
   withOutlookSendLock(()=>{
     openOutlookUrl(matrixOutlookUrl(m, sel));
@@ -1335,7 +1569,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.16.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.17.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
@@ -1396,6 +1630,15 @@ function cfgOpen(){
      [30,45,60,90,120,180].map(v=>'<option value="'+v+'"'+(S.alertMin===v?' selected':'')+'>'+v+'分</option>').join('')+
      '</select>';
 
+  h+='<h2 style="margin-top:14px">記録の目安</h2>';
+  h+='<div class="note">1日の所定労働時間は「記録カバー率」（その日どれだけ打刻できたか）の分母に使います。</div>';
+  h+='<div class="row2"><select id="workSel" onchange="setWorkH(this.value)">'+
+     [7,7.5,7.75,8,8.5,9].map(v=>'<option value="'+v+'"'+(S.workH===v?' selected':'')+'>'+v+'h／日</option>').join('')+
+     '</select>'+
+     '<select id="vhSel" onchange="setVhTarget(this.value)">'+
+     [30,40,50,60,70].map(v=>'<option value="'+v+'"'+(S.vhTarget===v?' selected':'')+'>付加価値 目標'+v+'%</option>').join('')+
+     '</select></div>';
+
   h+='<h2>PJ一覧</h2>';
   S.projects.forEach((p,i)=>{
     h+='<div class="listrow"><span class="nm">'+esc(p)+'</span>'+
@@ -1417,13 +1660,15 @@ function cfgOpen(){
   openSheet(h);
 }
 function setAlert(v){S.alertMin=parseInt(v,10)||60;_alerted=false;save();render();}
+function setWorkH(v){S.workH=parseFloat(v)||8;save();cfgOpen();}
+function setVhTarget(v){S.vhTarget=parseInt(v,10)||50;save();cfgOpen();}
 function addPj(){const v=document.getElementById('newPj').value.trim();if(!v)return;S.projects.push(v);save();cfgOpen();render();}function delPj(i){if(S.projects.length<=1)return;S.projects.splice(i,1);save();cfgOpen();render();}
 function addCat(){const v=document.getElementById('newCat').value.trim();if(!v)return;S.cats.push({n:v,v:'keep'});save();cfgOpen();render();}
 function delCat(i){if(S.cats.length<=1)return;S.cats.splice(i,1);save();cfgOpen();render();}
 function setV(i,v){S.cats[i].v=v;save();cfgOpen();render();}
 
-// 起動時は必ず当日を選択（前回選んだ日付は引き継がない）
-S.mtxDay=dkeyOffset(0);
+// 起動時は必ず現在の期間を選択（前回選んだ日付・週・月は引き継がない）
+S.mtxKey=null;
 render();
 </script>
 </body>
