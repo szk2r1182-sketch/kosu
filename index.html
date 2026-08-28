@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.14.0 (2026-08-04): 月次マトリクス機能を追加。日次のPJ×業務分類マトリクスと同様のレイアウトで、月単位の集計を全画面表示・CSV/Markdown/Outlook出力に対応。月次分析画面から「月次マトリクスを表示」ボタンで開く。
+  ver.1.16.0 (2026-08-27): 工数マトリクスを日付単位で選べるようにした（直近7日分の日付チップ）。前日や先週金曜の分を後から選んでOutlookへ送信でき、終日予定はその日の日付で登録される。マトリクス送信済みの日を記録し、未送信の日をホーム画面とマトリクス画面で警告表示。「まとめて」タブで直近7日／今週の合算も従来どおり確認できる。
 -->
 <style>
   :root{
@@ -166,6 +166,8 @@
     font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;
   }
   .mtxbtn:active{transform:scale(.99);background:var(--panel);}
+  .mtxbtn{white-space:pre-line;line-height:1.5;}
+  .mtxbtn.alert{border-color:rgba(255,176,32,.6);color:var(--amber);}
   .mtx-wrap{
     margin-top:12px;overflow:auto;max-height:74vh;-webkit-overflow-scrolling:touch;
     border:1px solid var(--line);border-radius:10px;background:var(--panel);
@@ -193,6 +195,37 @@
   .mtx .tot{color:var(--amber);font-weight:600;}
   .mtx tfoot th,.mtx tfoot td{position:sticky;bottom:0;border-top:2px solid var(--line);border-bottom:none;background:#151B22;}
   .mtx tfoot th{left:0;z-index:2;}
+
+  /* ── 期間切替セグメント ── */
+  .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--panel);}
+  .segbtn{
+    flex:1;padding:11px 4px;background:transparent;border:none;border-right:1px solid var(--line);
+    color:var(--mute);font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;
+  }
+  .segbtn:last-child{border-right:none;}
+  .segbtn.on{background:var(--amber);color:#12161B;}
+  .segbtn:active{background:var(--panel-2);}
+  .segbtn.on:active{background:var(--amber);}
+  .seg.sub{margin-top:8px;}
+
+  /* ── 日付チップ（日ごと表示の日付選択） ── */
+  .chips{
+    display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:4px;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .chips::-webkit-scrollbar{display:none;}
+  .chip{
+    flex:0 0 auto;min-width:76px;padding:8px 8px 6px;border-radius:11px;
+    background:var(--panel);border:1px solid var(--line);color:var(--txt);
+    font-family:var(--sans);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;
+  }
+  .chip .d{font-size:12px;font-weight:600;}
+  .chip .h{font-family:var(--mono);font-size:14px;color:var(--amber);font-variant-numeric:tabular-nums;}
+  .chip .st{font-size:9px;color:var(--mute);line-height:1.2;}
+  .chip.none{opacity:.45;}
+  .chip.none .h{color:var(--mute);}
+  .chip.on{border-color:var(--amber);background:rgba(255,176,32,.12);}
+  .chip:active{transform:scale(.97);}
 
   /* ── マトリクス送信アイコン行 ── */
   .mtxsend{display:flex;gap:10px;justify-content:center;margin-top:14px;}
@@ -350,7 +383,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.14.0</div>
+  <div class="ver">ver.1.16.0</div>
 </div>
 
 <div class="dock">
@@ -403,6 +436,10 @@ if(!S.mode) S.mode='outlook';
 S.mode='outlook'; // 転送はOutlook直リンクに固定（標準カレンダー方式は廃止）
 if(!S.favs) S.favs=[];
 if(typeof S.alertMin!=='number') S.alertMin=60;
+// マトリクスの表示対象（既定：日ごと・当日）
+if(S.mtxMode!=='sum') S.mtxMode='day';
+if(!S.mtxSum) S.mtxSum='week7';
+if(!S.mtxSent||typeof S.mtxSent!=='object') S.mtxSent={};
 
 const VLABEL={add:'付加価値',keep:'維持管理',waste:'ムダ'};
 const VCLASS={add:'v-add',keep:'v-keep',waste:'v-waste'};
@@ -620,9 +657,12 @@ function render(){
   const mtxBtn=document.getElementById('mtxBtn');
   if(mtxBtn){
     const m=buildMatrix(list);
-    mtxBtn.textContent = m.hasData
+    const un=unsentDays();
+    mtxBtn.textContent = (m.hasData
       ? '🔳　工数マトリクス（PC入力用）　合計 '+fmtH(m.grand)+'h'
-      : '🔳　工数マトリクス（PC入力用）を開く';
+      : '🔳　工数マトリクス（PC入力用）を開く')
+      + (un.length?'\n⚠ '+un.map(dk=>dkText(dk)).join('・')+' が未送信':'');
+    mtxBtn.classList.toggle('alert', un.length>0);
   }
 
   save();
@@ -633,8 +673,75 @@ function todayEntries(){
   const t=dkey(Date.now());
   return S.entries.filter(e=>dkey(e.start)===t).sort((a,b)=>b.start-a.start);
 }
+/* ── マトリクスの表示対象（日ごと／まとめて） ──────────────────
+   記録そのものは削除されないため、日付を選び直せば過去分もいつでも再表示・再送信できる */
+const RANGE_LABEL={week7:'直近7日',thisweek:'今週'};
+const WD=['日','月','火','水','木','金','土'];
+function dayStart(t){const d=new Date(t);d.setHours(0,0,0,0);return d.getTime();}
+// 日付キー（YYYY-MM-DD）まわり
+function dkeyOffset(off){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-off);return dkey(d.getTime());}
+function dkText(dk){const p=dk.split('-').map(Number);return p[1]+'/'+p[2]+'('+WD[new Date(p[0],p[1]-1,p[2]).getDay()]+')';}
+function dayEntries(dk){ return S.entries.filter(e=>dkey(e.start)===dk).sort((a,b)=>b.start-a.start); }
+function recentDayKeys(n){ const a=[]; for(let i=0;i<(n||7);i++) a.push(dkeyOffset(i)); return a; } // 新しい順
+function dayTotalH(dk){ const m=buildMatrix(dayEntries(dk),'day'); return m.grand; }
+// マトリクスをOutlookへ送った日の記録（記録単位のsentとは別管理）
+function isDaySent(dk){ return !!(S.mtxSent&&S.mtxSent[dk]); }
+function markDaySent(dk){ if(!S.mtxSent) S.mtxSent={}; S.mtxSent[dk]=Date.now(); save(); }
+function unmarkDaySent(dk){ if(S.mtxSent) delete S.mtxSent[dk]; save(); openMatrix(); render(); }
+// 直近7日のうち「記録があるのに未送信」の日（今日は除く＝まだ勤務中のため）
+function unsentDays(){
+  const today=dkeyOffset(0);
+  return recentDayKeys(7).filter(dk=>dk!==today&&dayEntries(dk).length>0&&!isDaySent(dk));
+}
+// 期間の開始・終了（終了は「その日の23:59:59.999」）を返す
+function rangeSpan(range){
+  const now=Date.now(), today=dayStart(now);
+  if(range==='thisweek'){
+    const dow=new Date(today).getDay();            // 0=日
+    const mon=today-((dow+6)%7)*86400000;          // 月曜起点
+    return {from:mon,to:today+86399999};
+  }
+  if(range==='week7') return {from:today-6*86400000,to:today+86399999};
+  return {from:today,to:today+86399999};
+}
+function rangeEntries(range){
+  const s=rangeSpan(range);
+  return S.entries.filter(e=>e.start>=s.from&&e.start<=s.to).sort((a,b)=>b.start-a.start);
+}
+const md_=t=>{const d=new Date(t);return pad(d.getMonth()+1)+'/'+pad(d.getDate());};
+function rangeText(range){
+  const s=rangeSpan(range);
+  return md_(s.from)+'〜'+md_(Date.now());
+}
+// 期間内に記録のあった日数（1日あたり平均の算出用）
+function rangeDayCount(list){ return new Set(list.map(e=>dkey(e.start))).size; }
+
+/* 現在の選択（日ごと＝1日分／まとめて＝直近7日・今週）を1か所にまとめる。
+   画面表示・CSV・Markdown・Outlook送信はすべてこの情報を参照する */
+function selInfo(){
+  if(S.mtxMode==='sum'){
+    const r=(S.mtxSum==='thisweek')?'thisweek':'week7';
+    const s=rangeSpan(r), today=dkey(Date.now()), txt=rangeText(r);
+    return {mode:'sum',range:r,list:rangeEntries(r),
+      title:RANGE_LABEL[r]+'（'+txt+'）',
+      caption:'／'+RANGE_LABEL[r]+'分（'+txt+'）',
+      head:RANGE_LABEL[r]+'の実績マトリクス（'+txt+'）',
+      fileKey:dkey(s.from)+'_'+today, outDate:today,
+      subject:'#kosu '+RANGE_LABEL[r]+'実績サマリー '+dkey(s.from)+'〜'+today,
+      tagHead:'#kosu-matrix 期間=['+dkey(s.from)+'〜'+today+']'};
+  }
+  const dk=S.mtxDay||dkeyOffset(0);
+  return {mode:'day',dk,list:dayEntries(dk),
+    title:dk+' '+dkText(dk),
+    caption:'／'+dk+' '+dkText(dk)+' の1日分',
+    head:dk+'（'+dkText(dk)+'）の実績マトリクス',
+    fileKey:dk, outDate:dk,
+    subject:'#kosu 日次実績サマリー '+dk,
+    tagHead:'#kosu-matrix 日付=['+dk+']'};
+}
+
 // マトリクスHTMLを生成（横:PJ × 縦:業務分類、0.1h刻み、行/列/総合計は丸めセルの合計）
-function buildMatrix(list, period='day'){
+function buildMatrix(list, period='day', capSuffix){
   const SEPM='\u0001';
   const cellMs={};
   list.forEach(e=>{ const k=e.pj+SEPM+e.cat; cellMs[k]=(cellMs[k]||0)+(e.end-e.start); });
@@ -661,7 +768,7 @@ function buildMatrix(list, period='day'){
   let tfoot='<tr><th>合計</th>';
   pjs.forEach(pj=>{ tfoot+='<td class="tot">'+fmtH(colTot[pj])+'</td>'; });
   tfoot+='<td class="tot">'+fmtH(grand)+'</td></tr>';
-  const caption=period==='day'?'単位：h（0.1h＝6分刻み）／当日分・翌日リセット':'単位：h（0.1h＝6分刻み）';
+  const caption='単位：h（0.1h＝6分刻み）'+(capSuffix||'');
   const html='<div class="mtx-wrap"><table class="mtx">'+
     '<caption>'+caption+'</caption>'+
     '<thead>'+thead+'</thead><tbody>'+tbody+'</tbody><tfoot>'+tfoot+'</tfoot></table></div>';
@@ -693,7 +800,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.14.0 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.16.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -718,18 +825,58 @@ function openMatrixMonthly(mk){
 }
 
 // マトリクスを全画面（シート）で開く
+function setMtxMode(mode){ S.mtxMode=mode; if(mode==='day'&&!S.mtxDay) S.mtxDay=dkeyOffset(0); save(); openMatrix(); render(); }
+function setMtxDay(dk){ S.mtxMode='day'; S.mtxDay=dk; save(); openMatrix(); render(); }
+function setMtxSum(r){ S.mtxMode='sum'; S.mtxSum=r; save(); openMatrix(); render(); }
 function openMatrix(){
-  const m=buildMatrix(todayEntries());
-  let h='<h3>工数マトリクス（PC入力用）</h3>'+m.html;
+  const sel=selInfo();
+  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
+  let h='<h3>工数マトリクス（PC入力用）</h3>';
+  // 送り忘れの案内（今日以外で記録があるのに未送信の日）
+  const un=unsentDays();
+  if(un.length){
+    h+='<div class="warn" style="margin-bottom:10px"><b>未送信の日があります</b><br>'+
+       un.map(dk=>dkText(dk)).join('・')+' のマトリクスは、まだOutlookへ送っていません。'+
+       '下の日付を選ぶとその日の分を送れます。</div>';
+  }
+  // 日ごと／まとめて
+  h+='<div class="seg">'+
+     '<button class="segbtn'+(sel.mode==='day'?' on':'')+'" onclick="setMtxMode(\'day\')">日ごと</button>'+
+     '<button class="segbtn'+(sel.mode==='sum'?' on':'')+'" onclick="setMtxMode(\'sum\')">まとめて</button></div>';
+  if(sel.mode==='day'){
+    h+='<div class="chips">'+recentDayKeys(7).map(dk=>{
+      const tot=dayTotalH(dk), has=tot>0, unsent=has&&dk!==dkeyOffset(0)&&!isDaySent(dk);
+      return '<button class="chip'+(dk===sel.dk?' on':'')+(has?'':' none')+'" onclick="setMtxDay(\''+dk+'\')">'+
+        '<span class="d">'+dkText(dk)+'</span>'+
+        '<span class="h">'+(has?fmtH(tot)+'h':'–')+'</span>'+
+        '<span class="st">'+(!has?'&nbsp;':isDaySent(dk)?'✓送信済':unsent?'⚠未送信':'&nbsp;')+'</span></button>';
+    }).join('')+'</div>';
+  }else{
+    h+='<div class="seg sub">'+['week7','thisweek'].map(r=>
+      '<button class="segbtn'+(sel.range===r?' on':'')+'" onclick="setMtxSum(\''+r+'\')">'+RANGE_LABEL[r]+'</button>').join('')+'</div>';
+  }
+  h+='<div class="note" style="margin:8px 0 0">表示中：'+sel.title+
+     (sel.mode==='day'?(sel.dk===dkeyOffset(0)?'':'　'+(isDaySent(sel.dk)?'✓ Outlook送信済':'⚠ Outlook未送信')):'')+
+     '<br>記録は消えません。日付を選び直せば、前日や先週金曜の分もそのまま送れます。</div>';
+  if(sel.mode==='day'&&isDaySent(sel.dk)){
+    h+='<button class="mini" style="width:100%;margin-top:6px;font-size:13px;padding:9px" '+
+       'onclick="unmarkDaySent(\''+sel.dk+'\')">送信済のマークを取り消す</button>';
+  }
+  h+=m.html;
   if(m.hasData){
+    if(sel.mode==='sum'){
+      const days=rangeDayCount(sel.list);
+      h+='<div class="sum">'+cell('合計',fmtH(m.grand)+'h',true)+cell('記録日数',days+'日')+
+         cell('1日平均',fmtH(days?m.grand/days:0)+'h')+'</div>';
+    }
     h+='<div class="mtxsend">'+
-       '<button class="mtxicon amber" onclick="matrixSendOutlook()" aria-label="今日のマトリクスをOutlookへ送る">'+
+       '<button class="mtxicon amber" onclick="matrixSendOutlook()" aria-label="表示中の期間のマトリクスをOutlookへ送る">'+
          '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>'+
          '<span>Outlookへ</span></button>'+
-       '<button class="mtxicon" onclick="matrixExportCsv()" aria-label="今日のマトリクスをCSVで書き出す">'+
+       '<button class="mtxicon" onclick="matrixExportCsv()" aria-label="表示中の期間のマトリクスをCSVで書き出す">'+
          '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>'+
          '<span>CSV</span></button>'+
-       '<button class="mtxicon" onclick="matrixExportMd()" aria-label="今日のマトリクスをMarkdownで書き出す">'+
+       '<button class="mtxicon" onclick="matrixExportMd()" aria-label="表示中の期間のマトリクスをMarkdownで書き出す">'+
          '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6h6"></path><path d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"></path><path d="M8 13h8M8 17h5"></path></svg>'+
          '<span>MD</span></button>'+
        '</div>';
@@ -748,18 +895,19 @@ function matrixRows(m){
   });
 }
 function matrixExportCsv(){
-  const m=buildMatrix(todayEntries());
-  if(!m.hasData){ toast('今日の記録がありません'); return; }
+  const sel=selInfo();
+  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
+  if(!m.hasData){ toast('この期間の記録がありません'); return; }
   let csv='\ufeff業務分類,'+m.pjs.map(csvCell).join(',')+',合計\r\n';
   matrixRows(m).forEach(r=>{
     csv+=csvCell(r.cat)+','+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'').join(',')+','+fmtH(r.tot)+'\r\n';
   });
   csv+='合計,'+m.pjs.map(pj=>fmtH(m.colTot[pj])).join(',')+','+fmtH(m.grand)+'\r\n';
-  downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'kosu_matrix_'+dkey(Date.now())+'.csv');
-  toast('今日のマトリクスをCSVで書き出しました');
+  downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.csv');
+  toast(sel.title+' のマトリクスをCSVで書き出しました');
 }
-function matrixMdText(m){
-  let md='# 工数マトリクス '+dkey(Date.now())+'\n\n';
+function matrixMdText(m, sel){
+  let md='# 工数マトリクス '+sel.title+'\n\n';
   md+='| 業務分類 ＼ PJ | '+m.pjs.join(' | ')+' | 合計 |\n';
   md+='|---|'+m.pjs.map(()=>'--:').join('|')+'|--:|\n';
   matrixRows(m).forEach(r=>{
@@ -769,17 +917,18 @@ function matrixMdText(m){
   return md;
 }
 function matrixExportMd(){
-  const m=buildMatrix(todayEntries());
-  if(!m.hasData){ toast('今日の記録がありません'); return; }
-  const md=matrixMdText(m)+'\n---\n_工数タイムレコーダー ver.1.14.0 より出力_\n';
-  downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+dkey(Date.now())+'.md');
-  toast('今日のマトリクスをMarkdownで書き出しました');
+  const sel=selInfo();
+  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
+  if(!m.hasData){ toast('この期間の記録がありません'); return; }
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.16.0 より出力_\n';
+  downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
+  toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
 // Outlook本文用：プロジェクトごとに読みやすくまとめたテキスト（表崩れ対策のため罫線表は使わない）
 // Outlook本文用：見たままの罫線表（HTML）で送る。予定の本文欄はHTMLとして解釈されるため実際の表になる
-function matrixBodyHtml(m){
+function matrixBodyHtml(m, sel){
   let html='<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:13px;color:#222;">';
-  html+='<p style="margin:0 0 8px;font-weight:bold;">当日の実績マトリクス（'+dkey(Date.now())+'）　合計 '+fmtH(m.grand)+'h</p>';
+  html+='<p style="margin:0 0 8px;font-weight:bold;">'+sel.head+'　合計 '+fmtH(m.grand)+'h</p>';
   html+='<table style="border-collapse:collapse;font-size:12px;" cellpadding="6" cellspacing="0">';
   html+='<tr><th style="border:1px solid #999;background:#f2f2f2;text-align:left;">業務分類＼PJ</th>';
   m.pjs.forEach(pj=>{ html+='<th style="border:1px solid #999;background:#f2f2f2;text-align:center;">'+esc(pj)+'</th>'; });
@@ -798,9 +947,8 @@ function matrixBodyHtml(m){
   html+='</table></div>';
   return html;
 }
-function matrixTagLines(m){
-  const d=dkey(Date.now());
-  const tags=['#kosu-matrix 日付=['+d+']'];
+function matrixTagLines(m, sel){
+  const tags=[sel.tagHead];
   m.pjs.forEach(pj=>{
     m.cats.forEach(cat=>{
       const v=m.cellVal[pj+m.SEPM+cat];
@@ -810,25 +958,28 @@ function matrixTagLines(m){
   return tags.map(esc).join('<br>');
 }
 // 終日の予定として登録（予定表の一番上に表示され、後から見つけやすい）
-function matrixOutlookUrl(m){
-  const d=dkey(Date.now());
-  const tagsHtml='<div style="font-size:10px;color:#999;margin-top:12px;">'+matrixTagLines(m)+'</div>';
+function matrixOutlookUrl(m, sel){
+  const tagsHtml='<div style="font-size:10px;color:#999;margin-top:12px;">'+matrixTagLines(m,sel)+'</div>';
   const p=new URLSearchParams({
     path:'/calendar/action/compose',
     rru:'addevent',
-    subject:'#kosu 日次実績サマリー '+d,
-    startdt:d,
-    enddt:d,
+    subject:sel.subject,
+    startdt:sel.outDate,   // 日ごとの場合は「その日」に終日予定として登録される（前日分の後追い送信に対応）
+    enddt:sel.outDate,
     allday:'true',
-    body:matrixBodyHtml(m)+tagsHtml
+    body:matrixBodyHtml(m,sel)+tagsHtml
   });
   return 'https://outlook.office.com/calendar/0/deeplink/compose?'+p.toString();
 }
 function matrixSendOutlook(){
   if(_outlookSendLock) return;
-  const m=buildMatrix(todayEntries());
-  if(!m.hasData){ toast('今日の記録がありません'); return; }
-  withOutlookSendLock(()=>{ openOutlookUrl(matrixOutlookUrl(m)); });
+  const sel=selInfo();
+  const m=buildMatrix(sel.list, sel.mode==='sum'?sel.range:'day', sel.caption);
+  if(!m.hasData){ toast('この期間の記録がありません'); return; }
+  withOutlookSendLock(()=>{
+    openOutlookUrl(matrixOutlookUrl(m, sel));
+    if(sel.mode==='day'){ markDaySent(sel.dk); openMatrix(); render(); }
+  });
 }
 
 // 月次マトリクス Outlook送信用
@@ -1184,7 +1335,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.14.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.16.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
@@ -1271,6 +1422,8 @@ function addCat(){const v=document.getElementById('newCat').value.trim();if(!v)r
 function delCat(i){if(S.cats.length<=1)return;S.cats.splice(i,1);save();cfgOpen();render();}
 function setV(i,v){S.cats[i].v=v;save();cfgOpen();render();}
 
+// 起動時は必ず当日を選択（前回選んだ日付は引き継がない）
+S.mtxDay=dkeyOffset(0);
 render();
 </script>
 </body>
