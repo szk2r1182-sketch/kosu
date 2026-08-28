@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.17.0 (2026-08-28): 工数マトリクスを日次／週次／月次の3タブに再構成。価値区分を積み上げた推移グラフ（棒をタップで期間切替）、構成比％の併記とヒートマップ、前回記録日・先週・先月との増減表示、付加価値割合の目標・記録カバー率・連続記録日数、PJ別の配分バー、変化を要約する一言コメントを追加。CSV/Markdown/Outlook出力にも構成比と前期間比を反映。設定に所定労働時間と付加価値の目標を追加。
+  ver.1.18.1 (2026-08-28): スマートフォンでの視認性向上のため、数値の文字をさらに拡大（サマリーの主要数値32px、マトリクス表のセル20px、ヘッダの期間合計17px、グラフの数値ラベルも拡大）。
 -->
 <style>
   :root{
@@ -169,12 +169,12 @@
   .mtxbtn{white-space:pre-line;line-height:1.5;}
   .mtxbtn.alert{border-color:rgba(255,176,32,.6);color:var(--amber);}
   .mtx-wrap{
-    margin-top:12px;overflow:auto;max-height:74vh;-webkit-overflow-scrolling:touch;
+    margin-top:12px;overflow:auto;max-height:62vh;-webkit-overflow-scrolling:touch;
     border:1px solid var(--line);border-radius:10px;background:var(--panel);
   }
-  .mtx{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
+  .mtx{border-collapse:separate;border-spacing:0;width:100%;font-size:15px;}
   .mtx caption{caption-side:top;text-align:left;font-size:11px;color:var(--mute);padding:8px 10px 4px;}
-  .mtx th,.mtx td{padding:9px 11px;white-space:nowrap;border-bottom:1px solid var(--line);}
+  .mtx th,.mtx td{padding:11px 12px;white-space:nowrap;border-bottom:1px solid var(--line);}
   .mtx thead th{
     position:sticky;top:0;z-index:2;
     background:var(--panel-2);color:var(--mute);font-weight:600;
@@ -199,14 +199,14 @@
   /* ── 期間切替セグメント ── */
   .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--panel);}
   .segbtn{
-    flex:1;padding:11px 4px;background:transparent;border:none;border-right:1px solid var(--line);
-    color:var(--mute);font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;
+    flex:1;padding:12px 4px;background:transparent;border:none;border-right:1px solid var(--line);
+    color:var(--mute);font-family:var(--sans);font-size:15px;font-weight:600;cursor:pointer;
   }
   .segbtn:last-child{border-right:none;}
   .segbtn.on{background:var(--amber);color:#12161B;}
   .segbtn:active{background:var(--panel-2);}
   .segbtn.on:active{background:var(--amber);}
-  .seg.sub{margin-top:8px;}
+  .seg.sub{margin-top:7px;}
 
   /* ── 日付チップ（日ごと表示の日付選択） ── */
   .chips{
@@ -257,7 +257,7 @@
   .trendwrap{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 6px 6px;}
   .trendwrap svg{display:block;}
   .legend{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 6px 2px;}
-  .lg{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--mute);}
+  .lg{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--mute);}
   .lg i{width:9px;height:9px;border-radius:2px;display:inline-block;}
   .lgnote{margin-left:auto;font-size:10px;color:#5A6673;}
 
@@ -267,26 +267,26 @@
 
   /* ── 数値＋構成比＋増減 ── */
   .hv{display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;}
-  .pv{display:block;font-size:9.5px;color:var(--mute);font-family:var(--sans);line-height:1.3;margin-top:1px;}
-  .dv{display:block;font-size:9.5px;font-family:var(--mono);line-height:1.3;margin-top:1px;}
+  .pv{display:block;font-size:12px;color:var(--mute);font-family:var(--sans);line-height:1.3;margin-top:1px;}
+  .dv{display:block;font-size:13px;font-family:var(--mono);line-height:1.3;margin-top:1px;}
   .dv.up{color:#E0A64B;}
   .dv.down{color:#6E9CD2;}
   .dv.flat{color:#5A6673;}
-  .mtx td .hv{font-size:13px;}
+  .mtx td .hv{font-size:20px;font-weight:600;}
   .sumcell .hv{font-size:17px;font-weight:600;}
 
   /* ── 価値区分の内訳バー ── */
   .vbars{margin-top:12px;}
   .vrow{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
   .vrow.dim{opacity:.5;}
-  .vlab{flex:0 0 52px;font-size:11px;color:var(--mute);text-align:right;}
-  .vbar{flex:1;display:flex;height:20px;border-radius:5px;overflow:hidden;background:var(--panel);}
-  .vseg{display:flex;align-items:center;justify-content:center;font-size:10px;color:#12161B;font-weight:700;}
+  .vlab{flex:0 0 56px;font-size:12px;color:var(--mute);text-align:right;}
+  .vbar{flex:1;display:flex;height:30px;border-radius:5px;overflow:hidden;background:var(--panel);}
+  .vseg{display:flex;align-items:center;justify-content:center;font-size:14px;color:#12161B;font-weight:700;}
   .vseg.add{background:#3FB68B;}
   .vseg.keep{background:#6E9CD2;}
   .vseg.waste{background:#C97A9E;}
   .vempty{font-size:10px;color:#4C5967;padding-left:8px;line-height:20px;}
-  .fb{margin-top:8px;font-size:12px;line-height:1.6;color:var(--txt);
+  .fb{margin-top:10px;font-size:14px;line-height:1.6;color:var(--txt);
       background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);
       border-radius:8px;padding:8px 10px;}
   .pcttoggle{display:flex;justify-content:flex-end;margin-top:12px;}
@@ -294,12 +294,53 @@
 
   /* ── PJ別バー ── */
   .pjrow{margin-bottom:8px;}
-  .pjtop{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:3px;gap:8px;}
+  .pjtop{display:flex;justify-content:space-between;align-items:baseline;font-size:15px;margin-bottom:3px;gap:8px;}
   .pjn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .pjv{flex:0 0 auto;color:var(--mute);font-family:var(--mono);font-size:12px;display:flex;align-items:baseline;gap:6px;}
+  .pjv{flex:0 0 auto;color:var(--mute);font-family:var(--mono);font-size:15px;display:flex;align-items:baseline;gap:6px;}
   .pjv .dv{display:inline;}
-  .pjbar{height:6px;background:var(--panel);border-radius:3px;overflow:hidden;}
+  .pjbar{height:8px;background:var(--panel);border-radius:3px;overflow:hidden;}
   .pjbar span{display:block;height:100%;background:var(--amber);}
+
+  /* ── マトリクス画面：固定ヘッダとページ切替 ── */
+  .mtxhead{
+    position:sticky;top:-16px;z-index:6;background:var(--bg);
+    padding:2px 0 8px;margin:-2px 0 8px;border-bottom:1px solid var(--line);
+  }
+  .mtxbody{min-height:44vh;}
+  .pnav{display:flex;align-items:center;gap:6px;margin-top:8px;}
+  .navbtn{
+    flex:0 0 44px;height:44px;border-radius:12px;background:var(--panel);
+    border:1px solid var(--line);color:var(--txt);font-size:26px;line-height:1;cursor:pointer;
+  }
+  .navbtn:active{background:var(--panel-2);}
+  .navbtn.off{opacity:.3;}
+  .pttl{flex:1;text-align:center;line-height:1.35;min-width:0;}
+  .pttl b{font-size:15px;display:block;}
+  .pttl .ok{color:var(--ok);font-size:11px;}
+  .pttl .al{color:var(--amber);font-size:11px;}
+  .ptot{display:block;font-family:var(--mono);font-size:17px;font-weight:600;color:var(--amber);}
+  .dvi{font-family:var(--mono);font-size:15px;}
+  .dvi.up{color:#E0A64B;}.dvi.down{color:#6E9CD2;}.dvi.flat{color:#5A6673;}
+  .nowbtn{
+    width:100%;margin-top:6px;padding:9px;border-radius:10px;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--amber);
+    font-size:13px;font-family:var(--sans);cursor:pointer;
+  }
+
+  /* ── 大きめ表示（スマホ視認性） ── */
+  .sum.big .sumcell{flex:1 1 calc(33.333% - 4px);min-width:96px;padding:12px 4px;}
+  .sum.big .sumcell .k{font-size:12px;}
+  .sum.big .sumcell .hv{font-size:32px;letter-spacing:-.01em;}
+  .sum.big .sumcell .pv{font-size:12px;}
+  .sum.big .sumcell .dv{font-size:14px;}
+  .stk{
+    display:inline-block;background:rgba(255,176,32,.14);color:var(--amber);
+    border-radius:6px;padding:1px 7px;margin-right:8px;font-size:12px;font-weight:700;
+  }
+  .warn.slim{padding:8px 10px;font-size:12px;line-height:1.5;}
+  .vdot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:baseline;}
+  .vdot.add{background:#3FB68B;}.vdot.keep{background:#6E9CD2;}.vdot.waste{background:#C97A9E;}
+  .pjbar.add span{background:#3FB68B;}.pjbar.keep span{background:#6E9CD2;}.pjbar.waste span{background:#C97A9E;}
 
   /* ── 転送バー（固定） ── */
   .dock{
@@ -338,7 +379,7 @@
   }
   .sheet.on{display:flex;}
   .sheet-in{
-    width:100%;max-height:88vh;overflow-y:auto;
+    width:100%;max-height:92vh;overflow-y:auto;
     background:var(--bg);border-top:1px solid var(--line);
     border-radius:18px 18px 0 0;padding:16px 16px calc(24px + env(safe-area-inset-bottom));
     max-width:520px;margin:0 auto;
@@ -431,7 +472,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.17.0</div>
+  <div class="ver">ver.1.18.1</div>
 </div>
 
 <div class="dock">
@@ -727,6 +768,7 @@ function todayEntries(){
    記録は削除されないため、期間を選び直せばいつでも再表示・再送信できる */
 const MODE_LABEL={day:'日次',week:'週次',month:'月次'};
 const PREV_LABEL={day:'前回記録日',week:'先週',month:'先月'};
+const PREV_SHORT={day:'前回',week:'先週',month:'先月'};
 const WD=['日','月','火','水','木','金','土'];
 function dayStart(t){const d=new Date(t);d.setHours(0,0,0,0);return d.getTime();}
 function dstart(dk){const p=dk.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]).getTime();}
@@ -828,10 +870,21 @@ function diffPt(cur,prev){
 
 /* 現在の選択（日次／週次／月次 × 期間キー）を1か所にまとめる。
    画面表示・CSV・Markdown・Outlook送信はすべてこの情報を参照する */
+function validKey(mode,k){
+  if(!k) return false;
+  const okDay=/^\d{4}-\d{2}-\d{2}$/.test(k), okMon=/^\d{4}-\d{2}$/.test(k);
+  if(mode==='month'?!okMon:!okDay) return false;
+  return periodSpan(mode,k).from<=Date.now();
+}
+// 期間を1つ前／後ろへ（未来へは進めない）
+function shiftKey(mode,key,delta){
+  if(mode==='week') return dkey(dstart(key)+delta*7*86400000);
+  if(mode==='month'){const p=key.split('-').map(Number);return monthKey(new Date(p[0],p[1]-1+delta,1).getTime());}
+  return dkey(dstart(key)+delta*86400000);
+}
 function selInfo(){
   const mode=['day','week','month'].indexOf(S.mtxMode)>=0?S.mtxMode:'day';
-  const keys=periodKeys(mode,12);
-  const key=(S.mtxKey&&keys.indexOf(S.mtxKey)>=0)?S.mtxKey:curKey(mode);
+  const key=validKey(mode,S.mtxKey)?S.mtxKey:curKey(mode);
   const s=periodSpan(mode,key), list=periodEntries(mode,key);
   const title=periodTitle(mode,key);
   const endD=dkey(Math.min(s.to,Date.now()));
@@ -920,7 +973,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.17.0 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.18.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -951,11 +1004,12 @@ function toggleMtxPct(){ S.mtxPct=(S.mtxPct===false); save(); openMatrix(); }
 
 /* 推移グラフ（価値区分の積み上げ棒）。棒をタップするとその期間に切り替わる＝期間選択も兼ねる */
 function trendChart(mode,selKey){
-  const n=mode==='day'?7:6;
+  const big=S.mtxView==='chart';
+  const n=big?(mode==='day'?10:8):(mode==='day'?7:6);
   const keys=periodKeys(mode,n);
   const data=keys.map(k=>({k,g:agg(periodEntries(mode,k))}));
   const maxH=Math.max.apply(null,[0.5].concat(data.map(d=>d.g.total/3600000)));
-  const CW=44, H=132, TOP=20, BH=76, BASE=TOP+BH, BW=24;
+  const CW=44, H=big?200:132, TOP=20, BH=big?142:76, BASE=TOP+BH, BW=big?26:24;
   const COL={add:'#3FB68B',keep:'#6E9CD2',waste:'#C97A9E'};
   let g='';
   data.forEach((d,i)=>{
@@ -967,18 +1021,18 @@ function trendChart(mode,selKey){
         const hh=(d.g.byV[v]/3600000)/maxH*BH;
         if(hh>0.4){ y-=hh; g+='<rect x="'+x+'" y="'+y.toFixed(1)+'" width="'+BW+'" height="'+hh.toFixed(1)+'" fill="'+COL[v]+'" opacity="'+(on?1:.62)+'"/>'; }
       });
-      g+='<text x="'+(x+BW/2)+'" y="'+(y-4).toFixed(1)+'" text-anchor="middle" font-size="10" fill="'+(on?'#FFB020':'#7D8894')+'">'+fmtH(tot)+'</text>';
+      g+='<text x="'+(x+BW/2)+'" y="'+(y-4).toFixed(1)+'" text-anchor="middle" font-size="'+(big?13:11)+'" fill="'+(on?'#FFB020':'#7D8894')+'">'+fmtH(tot)+'</text>';
     }else{
       g+='<line x1="'+x+'" y1="'+BASE+'" x2="'+(x+BW)+'" y2="'+BASE+'" stroke="#3A434F" stroke-width="2"/>';
     }
     const unsent=mode==='day'&&tot>0&&d.k!==dkeyOffset(0)&&!isDaySent(d.k);
-    g+='<text x="'+(i*CW+CW/2)+'" y="'+(H-12)+'" text-anchor="middle" font-size="9.5" fill="'+(on?'#E6EDF3':'#7D8894')+'">'+esc(periodShort(mode,d.k))+'</text>';
+    g+='<text x="'+(i*CW+CW/2)+'" y="'+(H-12)+'" text-anchor="middle" font-size="'+(big?11.5:10)+'" fill="'+(on?'#E6EDF3':'#7D8894')+'">'+esc(periodShort(mode,d.k))+'</text>';
     if(mode==='day'){
-      g+='<text x="'+(i*CW+CW/2)+'" y="'+(H-2)+'" text-anchor="middle" font-size="8.5" fill="'+(unsent?'#FFB020':'#3FB68B')+'">'+(tot>0?(isDaySent(d.k)?'送信済':(d.k===dkeyOffset(0)?'':'未送信')):'')+'</text>';
+      g+='<text x="'+(i*CW+CW/2)+'" y="'+(H-2)+'" text-anchor="middle" font-size="'+(big?10.5:9)+'" fill="'+(unsent?'#FFB020':'#3FB68B')+'">'+(tot>0?(isDaySent(d.k)?'送信済':(d.k===dkeyOffset(0)?'':'未送信')):'')+'</text>';
     }
     g+='<rect x="'+(i*CW)+'" y="0" width="'+CW+'" height="'+H+'" fill="transparent" style="cursor:pointer" onclick="setMtxKey(\''+d.k+'\')"></rect>';
   });
-  return '<div class="trendwrap"><svg viewBox="0 0 '+(n*CW)+' '+H+'" width="100%" height="132" preserveAspectRatio="xMidYMid meet">'+
+  return '<div class="trendwrap"><svg viewBox="0 0 '+(n*CW)+' '+H+'" width="100%" height="'+(big?260:132)+'" preserveAspectRatio="xMidYMid meet">'+
          '<line x1="0" y1="'+BASE+'" x2="'+(n*CW)+'" y2="'+BASE+'" stroke="#2E3944" stroke-width="1"/>'+g+'</svg>'+
          '<div class="legend"><span class="lg"><i style="background:#3FB68B"></i>付加価値</span>'+
          '<span class="lg"><i style="background:#6E9CD2"></i>維持管理</span>'+
@@ -1033,8 +1087,89 @@ function feedbackText(mode,a,pa){
   return out.join('　／　');
 }
 
+function setMtxView(v){ S.mtxView=v; save(); openMatrix(); }
+function stepPeriod(d){
+  const sel=selInfo(), k=shiftKey(sel.mode,sel.key,d);
+  if(d>0&&!validKey(sel.mode,k)) return;
+  S.mtxKey=k; save(); openMatrix(); render();
+}
+function jumpNow(){ S.mtxKey=null; save(); openMatrix(); render(); }
+
+/* 出力ボタン（各ページ共通） */
+function sendRow(sel,hasData){
+  if(!hasData) return '';
+  let h='<div class="mtxsend">'+
+   '<button class="mtxicon amber" onclick="matrixSendOutlook()" aria-label="表示中の期間のマトリクスをOutlookへ送る">'+
+     '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>'+
+     '<span>Outlookへ</span></button>'+
+   '<button class="mtxicon" onclick="matrixExportCsv()" aria-label="表示中の期間のマトリクスをCSVで書き出す">'+
+     '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>'+
+     '<span>CSV</span></button>'+
+   '<button class="mtxicon" onclick="matrixExportMd()" aria-label="表示中の期間のマトリクスをMarkdownで書き出す">'+
+     '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6h6"></path><path d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"></path><path d="M8 13h8M8 17h5"></path></svg>'+
+     '<span>MD</span></button></div>';
+  if(sel.mode==='day'&&isDaySent(sel.key)){
+    h+='<button class="mini" style="width:100%;margin-top:8px;font-size:13px;padding:9px" onclick="unmarkDaySent(\''+sel.key+'\')">送信済のマークを取り消す</button>';
+  }
+  return h;
+}
+
+/* ページ1：サマリー（大きい数字だけ） */
+function viewSummary(sel,a,pa,m){
+  const vh=pctOf(a.byV.add,a.total), pvh=(pa&&pa.total)?pctOf(pa.byV.add,pa.total):null;
+  const target=S.vhTarget||50, workH=S.workH||8;
+  let h='';
+  const tiles=[];
+  tiles.push(cell('合計','<span class="hv">'+fmtH(a.total/3600000)+'h</span>'+(pa?diffTag(a.total/3600000,pa.total/3600000,'h'):''),true));
+  tiles.push(cell('付加価値の割合','<span class="hv" style="color:'+(vh>=target?'#3FB68B':'#E6EDF3')+'">'+vh+'%</span>'+
+     (pvh!=null?diffPt(vh,pvh):'')+'<span class="pv">目標'+target+'%'+(vh>=target?' 達成':'')+'</span>'));
+  if(sel.mode==='day'){
+    const cov=Math.min(999,Math.round(a.total/3600000/workH*100));
+    tiles.push(cell('記録カバー率','<span class="hv">'+cov+'%</span><span class="pv">'+fmtH(a.total/3600000)+' / '+workH+'h</span>'));
+  }else{
+    tiles.push(cell('1日平均','<span class="hv">'+fmtH(a.days?a.total/3600000/a.days:0)+'h</span>'+
+      '<span class="pv">'+a.days+'日 / 平日'+weekdayCount(sel.mode,sel.key)+'日</span>'));
+  }
+  h+='<div class="sum big">'+tiles.join('')+'</div>';
+  h+=valueBars(a,pa,PREV_SHORT[sel.mode]);
+  const st=streakDays();
+  h+='<div class="fb">'+(st>0?'<span class="stk">🔥'+st+'日連続</span>':'')+esc(feedbackText(sel.mode,a,pa))+'</div>';
+  h+=sendRow(sel,m.hasData);
+  return h;
+}
+
+/* ページ2：グラフ（推移だけを大きく） */
+function viewChart(sel){
+  return trendChart(sel.mode,sel.key)+
+    '<div class="note">棒をタップすると、その'+MODE_LABEL[sel.mode].replace('次','')+'に切り替わります。'+
+    (sel.mode==='day'?'棒の下の「未送信／送信済」でOutlookへ送ったかが分かります。':'')+'</div>';
+}
+
+/* ページ3：マトリクス表だけ */
+function viewTable(sel,m,showPct){
+  let h='<div class="pcttoggle"><button class="mini" onclick="toggleMtxPct()">'+(showPct?'構成比を隠す':'構成比を表示')+'</button></div>';
+  h+=m.html;
+  h+=sendRow(sel,m.hasData);
+  return h;
+}
+
+/* ページ4：配分（PJ別・業務分類別） */
+function viewBreakdown(sel,a,pa){
+  if(!a.total) return '<div class="empty">まだ記録がありません</div>';
+  let h=pjBars(a,pa);
+  h+='<h2 style="margin:16px 0 6px">業務分類別の配分</h2>';
+  Object.keys(a.byCat).sort((x,y)=>a.byCat[y]-a.byCat[x]).forEach(k=>{
+    const p=pctOf(a.byCat[k],a.total), v=catOf(k).v;
+    h+='<div class="pjrow"><div class="pjtop"><span class="pjn"><span class="vdot '+v+'"></span>'+esc(k)+'</span>'+
+       '<span class="pjv">'+fmtH(a.byCat[k]/3600000)+'h ・'+p+'% '+(pa?diffTag(a.byCat[k]/3600000,(pa.byCat[k]||0)/3600000):'')+'</span></div>'+
+       '<div class="pjbar '+v+'"><span style="width:'+p+'%"></span></div></div>';
+  });
+  return h;
+}
+
 function openMatrix(){
   const sel=selInfo(), mode=sel.mode, key=sel.key;
+  const view=['sum','chart','table','pj'].indexOf(S.mtxView)>=0?S.mtxView:'sum';
   const a=agg(sel.list);
   const pk=prevPeriodKey(mode,key);
   const pa=pk?agg(periodEntries(mode,pk)):null;
@@ -1046,62 +1181,36 @@ function openMatrix(){
       {pct:showPct, heat:true, prevRow:pa?prevRow:null, prevCol:pa?prevCol:null,
        prevGrand:pa?pa.total/3600000:null});
 
-  let h='<h3>工数マトリクス</h3>';
-  const un=unsentDays();
-  if(un.length){
-    h+='<div class="warn" style="margin-bottom:10px"><b>未送信の日があります</b><br>'+
-       un.map(dk=>dkText(dk)).join('・')+' はまだOutlookへ送っていません。グラフの棒をタップするとその日に切り替わります。</div>';
-  }
+  // ── 固定ヘッダ（期間タブ＋期間ナビ＋ページ切替） ──
+  let h='<div class="mtxhead">';
   h+='<div class="seg">'+['day','week','month'].map(md=>
       '<button class="segbtn'+(md===mode?' on':'')+'" onclick="setMtxMode(\''+md+'\')">'+MODE_LABEL[md]+'</button>').join('')+'</div>';
-  h+=trendChart(mode,key);
-  h+='<div class="selline"><b>'+esc(sel.title)+'</b>'+
-     (mode==='day'&&key!==dkeyOffset(0)?'　'+(isDaySent(key)?'<span class="ok">✓ 送信済</span>':'<span class="al">⚠ 未送信</span>'):'')+'</div>';
+  const isNow=key===curKey(mode), canNext=validKey(mode,shiftKey(mode,key,1));
+  h+='<div class="pnav">'+
+     '<button class="navbtn" onclick="stepPeriod(-1)" aria-label="前へ">‹</button>'+
+     '<div class="pttl"><b>'+esc(sel.title)+'</b>'+
+       (mode==='day'&&!isNow?'<span class="'+(isDaySent(key)?'ok':'al')+'">'+(isDaySent(key)?'✓ 送信済':'⚠ 未送信')+'</span>':'')+
+       '<span class="ptot">'+fmtH(a.total/3600000)+'h'+(pa?' '+diffTag(a.total/3600000,pa.total/3600000,'h').replace('class="dv','class="dvi'):'')+'</span></div>'+
+     '<button class="navbtn'+(canNext?'':' off')+'" onclick="stepPeriod(1)" aria-label="次へ">›</button>'+
+     '</div>';
+  if(!isNow) h+='<button class="nowbtn" onclick="jumpNow()">'+(mode==='day'?'今日':mode==='week'?'今週':'今月')+'へ戻る</button>';
+  h+='<div class="seg sub">'+[['sum','サマリー'],['chart','グラフ'],['table','表'],['pj','配分']].map(v=>
+      '<button class="segbtn'+(v[0]===view?' on':'')+'" onclick="setMtxView(\''+v[0]+'\')">'+v[1]+'</button>').join('')+'</div>';
+  h+='</div>';
 
-  // ── KPIタイル ──
-  const vh=pctOf(a.byV.add,a.total), pvh=pa&&pa.total?pctOf(pa.byV.add,pa.total):null;
-  const target=S.vhTarget||50, workH=S.workH||8;
-  const tiles=[];
-  tiles.push(cell('合計','<span class="hv">'+fmtH(a.total/3600000)+'h</span>'+(pa?diffTag(a.total/3600000,pa.total/3600000,'h'):''),true));
-  tiles.push(cell('付加価値の割合','<span class="hv" style="color:'+(vh>=target?'#3FB68B':'#E6EDF3')+'">'+vh+'%</span>'+
-     (pvh!=null?diffPt(vh,pvh):'')+'<span class="pv">目標'+target+'%'+(vh>=target?' 達成':'')+'</span>'));
-  if(mode==='day'){
-    const cov=Math.min(999,Math.round(a.total/3600000/workH*100));
-    tiles.push(cell('記録カバー率','<span class="hv">'+cov+'%</span><span class="pv">'+fmtH(a.total/3600000)+' / '+workH+'h</span>'));
-  }else{
-    const wd=weekdayCount(mode,key);
-    tiles.push(cell('記録日数','<span class="hv">'+a.days+'</span><span class="pv">平日'+wd+'日中</span>'));
-    tiles.push(cell('1日平均','<span class="hv">'+fmtH(a.days?a.total/3600000/a.days:0)+'h</span>'));
+  // ── 未送信の案内（サマリーページのみ） ──
+  const un=unsentDays();
+  if(view==='sum'&&un.length){
+    h+='<div class="warn slim">⚠ 未送信 '+un.length+'日：'+un.map(dk=>dkText(dk)).join('・')+'（‹ › で移動）</div>';
   }
-  const st=streakDays();
-  if(st>0) tiles.push(cell('連続記録','<span class="hv">🔥'+st+'日</span>'));
-  h+='<div class="sum">'+tiles.join('')+'</div>';
 
-  // ── 価値区分の内訳 ──
-  h+=valueBars(a,pa,PREV_LABEL[mode]);
-  h+='<div class="fb">'+esc(feedbackText(mode,a,pa))+'</div>';
+  h+='<div class="mtxbody">';
+  if(view==='sum') h+=viewSummary(sel,a,pa,m);
+  else if(view==='chart') h+=viewChart(sel);
+  else if(view==='table') h+=viewTable(sel,m,showPct);
+  else h+=viewBreakdown(sel,a,pa);
+  h+='</div>';
 
-  // ── マトリクス表 ──
-  h+='<div class="pcttoggle"><button class="mini" onclick="toggleMtxPct()">'+(showPct?'構成比を隠す':'構成比を表示')+'</button></div>';
-  h+=m.html;
-
-  if(m.hasData){
-    h+=pjBars(a,pa);
-    h+='<div class="mtxsend">'+
-       '<button class="mtxicon amber" onclick="matrixSendOutlook()" aria-label="表示中の期間のマトリクスをOutlookへ送る">'+
-         '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>'+
-         '<span>Outlookへ</span></button>'+
-       '<button class="mtxicon" onclick="matrixExportCsv()" aria-label="表示中の期間のマトリクスをCSVで書き出す">'+
-         '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>'+
-         '<span>CSV</span></button>'+
-       '<button class="mtxicon" onclick="matrixExportMd()" aria-label="表示中の期間のマトリクスをMarkdownで書き出す">'+
-         '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6h6"></path><path d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"></path><path d="M8 13h8M8 17h5"></path></svg>'+
-         '<span>MD</span></button>'+
-       '</div>';
-    if(mode==='day'&&isDaySent(key)){
-      h+='<button class="mini" style="width:100%;margin-top:8px;font-size:13px;padding:9px" onclick="unmarkDaySent(\''+key+'\')">送信済のマークを取り消す</button>';
-    }
-  }
   h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
   openSheet(h);
 }
@@ -1151,7 +1260,7 @@ function matrixExportMd(){
   const sel=selInfo();
   const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.17.0 より出力_\n';
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.18.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1569,7 +1678,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.17.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.18.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
