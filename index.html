@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.18.1 (2026-08-28): スマートフォンでの視認性向上のため、数値の文字をさらに拡大（サマリーの主要数値32px、マトリクス表のセル20px、ヘッダの期間合計17px、グラフの数値ラベルも拡大）。
+  ver.1.18.2 (2026-08-28): 画面下のバージョン表示を白・13pxにして読みやすくした。
 -->
 <style>
   :root{
@@ -435,7 +435,7 @@
     opacity:0;transition:opacity .25s;pointer-events:none;
   }
   .toast.on{opacity:1;}
-  .ver{text-align:center;color:#39434E;font-size:11px;font-family:var(--mono);margin-top:20px;}
+  .ver{text-align:center;color:#FFFFFF;font-size:13px;font-family:var(--mono);letter-spacing:.04em;margin-top:20px;}
   .warn{
     background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.4);
     border-radius:10px;padding:10px 12px;margin-bottom:12px;
@@ -472,7 +472,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.18.1</div>
+  <div class="ver">ver.1.18.2</div>
 </div>
 
 <div class="dock">
@@ -973,7 +973,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.18.1 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.18.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1260,7 +1260,7 @@ function matrixExportMd(){
   const sel=selInfo();
   const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.18.1 より出力_\n';
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.18.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1678,7 +1678,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.18.1 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.18.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
