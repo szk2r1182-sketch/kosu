@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.20.0 (2026-08-28): 配分ページの円グラフを操作可能にした。色に触れる（タップ／ホバー）と、その項目の構成比・時間・前期間比が円の中心に表示され、該当の凡例行も強調される。指を離す／もう一度触れると合計表示に戻る。
+  ver.1.21.0 (2026-08-28): 配分ページの円グラフに「価値区分別」を追加し、投資（付加価値）／現状維持（維持管理）／ムダの比率を円グラフで確認できるようにした。選択肢はPJ別・業務分類別・価値区分別の3つ。
 -->
 <style>
   :root{
@@ -207,6 +207,7 @@
   .segbtn:active{background:var(--panel-2);}
   .segbtn.on:active{background:var(--amber);}
   .seg.sub{margin-top:7px;}
+  .seg.sub .segbtn{font-size:14px;padding:12px 2px;}
 
   /* ── 日付チップ（日ごと表示の日付選択） ── */
   .chips{
@@ -491,7 +492,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.20.0</div>
+  <div class="ver">ver.1.21.0</div>
 </div>
 
 <div class="dock">
@@ -992,7 +993,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.20.0 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.21.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1221,27 +1222,40 @@ function donut(items,total,prevSrc){
     '<text id="pieT3" x="100" y="129" text-anchor="middle" font-size="11" fill="#5A6673">タップで内訳</text>'+
     '</svg></div>';
 }
+const VAL_NAME={add:'投資',keep:'現状維持',waste:'ムダ'};
+const VAL_COLOR={add:'#3FB68B',keep:'#6E9CD2',waste:'#C97A9E'};
 function viewBreakdown(sel,a,pa){
-  const kind=(S.mtxPie==='cat')?'cat':'pj';
-  let h='<div class="seg sub">'+
-     '<button class="segbtn'+(kind==='pj'?' on':'')+'" onclick="setMtxPie(\'pj\')">PJ別</button>'+
-     '<button class="segbtn'+(kind==='cat'?' on':'')+'" onclick="setMtxPie(\'cat\')">業務分類別</button></div>';
+  const kind=['pj','cat','val'].indexOf(S.mtxPie)>=0?S.mtxPie:'pj';
+  let h='<div class="seg sub">'+[['pj','PJ別'],['cat','業務分類別'],['val','価値区分別']].map(k=>
+     '<button class="segbtn'+(kind===k[0]?' on':'')+'" onclick="setMtxPie(\''+k[0]+'\')">'+k[1]+'</button>').join('')+'</div>';
   if(!a.total) return h+'<div class="empty">まだ記録がありません</div>';
-  const src=kind==='pj'?a.byPj:a.byCat, psrc=pa?(kind==='pj'?pa.byPj:pa.byCat):null;
-  const items=Object.keys(src).sort((x,y)=>src[y]-src[x]).map((k,i)=>({
-    name:k, ms:src[k], color:PIE_COLORS[i%PIE_COLORS.length], v:kind==='cat'?catOf(k).v:null }));
+  let items,psrc;
+  if(kind==='val'){
+    // 投資（付加価値）／現状維持（維持管理）／ムダ。順序は固定して見比べやすくする
+    items=['add','keep','waste'].filter(v=>a.byV[v]>0).map(v=>({name:VAL_NAME[v],ms:a.byV[v],color:VAL_COLOR[v],v:v}));
+    psrc=pa?{投資:pa.byV.add,現状維持:pa.byV.keep,ムダ:pa.byV.waste}:null;
+  }else{
+    const src=kind==='pj'?a.byPj:a.byCat;
+    psrc=pa?(kind==='pj'?pa.byPj:pa.byCat):null;
+    items=Object.keys(src).sort((x,y)=>src[y]-src[x]).map((k,i)=>({
+      name:k, ms:src[k], color:PIE_COLORS[i%PIE_COLORS.length], v:kind==='cat'?catOf(k).v:null }));
+  }
   h+=donut(items,a.total,psrc);
   h+='<div class="pielegend">';
   items.forEach(it=>{
     const pc=pctOf(it.ms,a.total);
     h+='<div class="lrow" data-i="'+items.indexOf(it)+'" onclick="pieShow('+items.indexOf(it)+')"><span class="lc" style="background:'+it.color+'"></span>'+
-       (it.v?'<span class="lv vtag '+VCLASS[it.v]+'">'+VLABEL[it.v].slice(0,2)+'</span>':'')+
+       (it.v&&kind!=='val'?'<span class="lv vtag '+VCLASS[it.v]+'">'+VLABEL[it.v].slice(0,2)+'</span>':'')+
        '<span class="ln">'+esc(it.name)+'</span>'+
        '<span class="lp">'+pc+'%</span>'+
        '<span class="lh">'+fmtH(it.ms/3600000)+'h</span>'+
        '<span class="ld">'+(psrc?diffTag(it.ms/3600000,(psrc[it.name]||0)/3600000):'')+'</span></div>';
   });
   h+='</div>';
+  if(kind==='val'){
+    const target=S.vhTarget||50, vh=pctOf(a.byV.add,a.total);
+    h+='<div class="fb">投資＝付加価値、現状維持＝維持管理。投資の比率 '+vh+'%（目標'+target+'%'+(vh>=target?' 達成':' まで あと'+Math.max(0,target-vh)+'pt')+'）</div>';
+  }
   return h;
 }
 
@@ -1338,7 +1352,7 @@ function matrixExportMd(){
   const sel=selInfo();
   const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.20.0 より出力_\n';
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.21.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1756,7 +1770,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.20.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.21.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
