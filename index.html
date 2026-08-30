@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.21.0 (2026-08-28): 配分ページの円グラフに「価値区分別」を追加し、投資（付加価値）／現状維持（維持管理）／ムダの比率を円グラフで確認できるようにした。選択肢はPJ別・業務分類別・価値区分別の3つ。
+  ver.1.22.0 (2026-08-28): 目標管理を強化。設定にムダの上限目標を追加し、価値区分別の円グラフに投資目標の位置マーカーと、投資・ムダそれぞれの目標達成／不足pt（時間換算つき）を表示。週次・月次のサマリーも「記録カバー率＝所定時間×平日数に対する記録率」に変更した。
 -->
 <style>
   :root{
@@ -349,9 +349,16 @@
   .donut .arc{transition:stroke-width .12s;}
   .donut text{pointer-events:none;}
   .lrow.on{border-color:var(--amber);background:var(--panel-2);}
+  .goalrow{
+    display:flex;justify-content:space-between;gap:8px;
+    margin:-3px 0 6px 22px;padding:3px 10px;font-size:11.5px;color:var(--mute);
+    border-left:2px solid var(--line);
+  }
+  .goalrow.ok span{color:var(--ok);font-weight:700;}
+  .goalrow.ng span{color:var(--amber);font-weight:700;}
   .pielegend{margin-top:6px;}
   .lrow{
-    display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:5px;
+    display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:4px;
     background:var(--panel);border:1px solid var(--line);border-radius:9px;font-size:14px;
   }
   .lc{flex:0 0 auto;width:12px;height:12px;border-radius:3px;}
@@ -492,7 +499,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.21.0</div>
+  <div class="ver">ver.1.22.0</div>
 </div>
 
 <div class="dock">
@@ -550,7 +557,8 @@ if(['day','week','month'].indexOf(S.mtxMode)<0) S.mtxMode='day';
 if(!S.mtxSent||typeof S.mtxSent!=='object') S.mtxSent={};
 if(typeof S.mtxPct!=='boolean') S.mtxPct=true;      // 構成比の表示
 if(typeof S.workH!=='number') S.workH=8;            // 1日の所定労働時間（記録カバー率の分母）
-if(typeof S.vhTarget!=='number') S.vhTarget=50;     // 付加価値割合の目標(%)
+if(typeof S.vhTarget!=='number') S.vhTarget=50;     // 投資（付加価値）割合の目標(%)
+if(typeof S.wasteTarget!=='number') S.wasteTarget=10; // ムダ割合の上限目標(%)
 
 const VLABEL={add:'付加価値',keep:'維持管理',waste:'ムダ'};
 const VCLASS={add:'v-add',keep:'v-keep',waste:'v-waste'};
@@ -993,7 +1001,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.21.0 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.22.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1141,14 +1149,17 @@ function viewSummary(sel,a,pa,m){
   let h='';
   const tiles=[];
   tiles.push(cell('合計','<span class="hv">'+fmtH(a.total/3600000)+'h</span>'+(pa?diffTag(a.total/3600000,pa.total/3600000,'h'):''),true));
-  tiles.push(cell('付加価値の割合','<span class="hv" style="color:'+(vh>=target?'#3FB68B':'#E6EDF3')+'">'+vh+'%</span>'+
+  tiles.push(cell('投資の割合','<span class="hv" style="color:'+(vh>=target?'#3FB68B':'#E6EDF3')+'">'+vh+'%</span>'+
      (pvh!=null?diffPt(vh,pvh):'')+'<span class="pv">目標'+target+'%'+(vh>=target?' 達成':'')+'</span>'));
   if(sel.mode==='day'){
     const cov=Math.min(999,Math.round(a.total/3600000/workH*100));
     tiles.push(cell('記録カバー率','<span class="hv">'+cov+'%</span><span class="pv">'+fmtH(a.total/3600000)+' / '+workH+'h</span>'));
   }else{
-    tiles.push(cell('1日平均','<span class="hv">'+fmtH(a.days?a.total/3600000/a.days:0)+'h</span>'+
-      '<span class="pv">'+a.days+'日 / 平日'+weekdayCount(sel.mode,sel.key)+'日</span>'));
+    const wd=weekdayCount(sel.mode,sel.key), base=workH*wd;
+    const cov=base>0?Math.round(a.total/3600000/base*100):0;
+    tiles.push(cell('記録カバー率','<span class="hv">'+cov+'%</span>'+
+      '<span class="pv">'+fmtH(a.total/3600000)+' / '+fmtH(base)+'h（平日'+wd+'日）</span>'+
+      '<span class="pv">1日平均 '+fmtH(a.days?a.total/3600000/a.days:0)+'h</span>'));
   }
   h+='<div class="sum big">'+tiles.join('')+'</div>';
   h+=valueBars(a,pa,PREV_SHORT[sel.mode]);
@@ -1196,7 +1207,7 @@ function pieShow(i){
   t3.textContent=it.h+'h'+(it.diff?'　'+it.diff:''); t3.setAttribute('fill','#7D8894');
 }
 let _pieTotalLabel='';
-function donut(items,total,prevSrc){
+function donut(items,total,prevSrc,goal){
   const R=64, SW=34, C=2*Math.PI*R, cx=100, cy=100;
   _pieTotalLabel=fmtH(total/3600000)+'h';
   _pieItems=items.map(it=>{
@@ -1215,8 +1226,18 @@ function donut(items,total,prevSrc){
           ' onclick="pieShow('+i+')" ontouchstart="pieShow('+i+')"></circle>';
     off+=len;
   });
-  return '<div class="donutwrap"><svg class="donut" viewBox="0 0 200 200" width="200" height="200">'+
-    '<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="#232C36" stroke-width="'+SW+'"></circle>'+arcs+
+  let mark='';
+  if(goal!=null&&goal>0&&goal<100){
+    const ang=-90+goal*3.6, rad=ang*Math.PI/180;
+    const x1=cx+Math.cos(rad)*(R-SW/2-3), y1=cy+Math.sin(rad)*(R-SW/2-3);
+    const x2=cx+Math.cos(rad)*(R+SW/2+3), y2=cy+Math.sin(rad)*(R+SW/2+3);
+    mark='<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'"'+
+         ' stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="3 2"></line>'+
+         '<text x="'+(cx+Math.cos(rad)*(R+SW/2+13)).toFixed(1)+'" y="'+(cy+Math.sin(rad)*(R+SW/2+13)+4).toFixed(1)+'"'+
+         ' text-anchor="middle" font-size="10" fill="#FFFFFF">目標</text>';
+  }
+  return '<div class="donutwrap"><svg class="donut" viewBox="0 0 200 200" width="176" height="176">'+
+    '<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="#232C36" stroke-width="'+SW+'"></circle>'+arcs+mark+
     '<text id="pieT1" x="100" y="95" text-anchor="middle" font-size="30" font-weight="700" fill="#E6EDF3">'+_pieTotalLabel+'</text>'+
     '<text id="pieT2" x="100" y="113" text-anchor="middle" font-size="12" fill="#7D8894">時間 合計</text>'+
     '<text id="pieT3" x="100" y="129" text-anchor="middle" font-size="11" fill="#5A6673">タップで内訳</text>'+
@@ -1240,7 +1261,7 @@ function viewBreakdown(sel,a,pa){
     items=Object.keys(src).sort((x,y)=>src[y]-src[x]).map((k,i)=>({
       name:k, ms:src[k], color:PIE_COLORS[i%PIE_COLORS.length], v:kind==='cat'?catOf(k).v:null }));
   }
-  h+=donut(items,a.total,psrc);
+  h+=donut(items,a.total,psrc,kind==='val'?(S.vhTarget||50):null);
   h+='<div class="pielegend">';
   items.forEach(it=>{
     const pc=pctOf(it.ms,a.total);
@@ -1250,11 +1271,22 @@ function viewBreakdown(sel,a,pa){
        '<span class="lp">'+pc+'%</span>'+
        '<span class="lh">'+fmtH(it.ms/3600000)+'h</span>'+
        '<span class="ld">'+(psrc?diffTag(it.ms/3600000,(psrc[it.name]||0)/3600000):'')+'</span></div>';
+    if(kind==='val'&&it.v!=='keep'){
+      const tg=it.v==='add'?(S.vhTarget||50):(S.wasteTarget||0);
+      const gap=it.v==='add'?(pc-tg):(tg-pc);   // プラスなら達成
+      h+='<div class="goalrow'+(gap>=0?' ok':' ng')+'">'+
+         (it.v==='add'?'目標 '+tg+'%以上':'上限 '+tg+'%以下')+
+         '<span>'+(gap>=0?'✓ 達成（余裕 '+Math.abs(gap)+'pt）':(it.v==='add'?'あと '+Math.abs(gap)+'pt':'超過 '+Math.abs(gap)+'pt'))+'</span></div>';
+    }
   });
   h+='</div>';
   if(kind==='val'){
-    const target=S.vhTarget||50, vh=pctOf(a.byV.add,a.total);
-    h+='<div class="fb">投資＝付加価値、現状維持＝維持管理。投資の比率 '+vh+'%（目標'+target+'%'+(vh>=target?' 達成':' まで あと'+Math.max(0,target-vh)+'pt')+'）</div>';
+    const target=S.vhTarget||50, wt=(S.wasteTarget||0), vh=pctOf(a.byV.add,a.total), wp=pctOf(a.byV.waste,a.total);
+    const need=Math.max(0,target-vh), over=Math.max(0,wp-wt);
+    h+='<div class="fb">'+
+       (need===0&&over===0?'✓ 投資・ムダとも目標を満たしています':
+        '目標まで '+(need?'投資 +'+need+'pt（'+fmtH(need*a.total/3600000/100)+'h）':'')+
+        (need&&over?' ／ ':'')+(over?'ムダ −'+over+'pt（'+fmtH(over*a.total/3600000/100)+'h）':''))+'</div>';
   }
   return h;
 }
@@ -1352,7 +1384,7 @@ function matrixExportMd(){
   const sel=selInfo();
   const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.21.0 より出力_\n';
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.22.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1770,7 +1802,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.21.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.22.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
@@ -1837,8 +1869,12 @@ function cfgOpen(){
      [7,7.5,7.75,8,8.5,9].map(v=>'<option value="'+v+'"'+(S.workH===v?' selected':'')+'>'+v+'h／日</option>').join('')+
      '</select>'+
      '<select id="vhSel" onchange="setVhTarget(this.value)">'+
-     [30,40,50,60,70].map(v=>'<option value="'+v+'"'+(S.vhTarget===v?' selected':'')+'>付加価値 目標'+v+'%</option>').join('')+
+     [30,40,50,60,70].map(v=>'<option value="'+v+'"'+(S.vhTarget===v?' selected':'')+'>投資 目標'+v+'%</option>').join('')+
      '</select></div>';
+  h+='<div class="row2"><select id="wasteSel" onchange="setWasteTarget(this.value)">'+
+     [0,5,10,15,20,30].map(v=>'<option value="'+v+'"'+(S.wasteTarget===v?' selected':'')+'>ムダ 上限'+v+'%</option>').join('')+
+     '</select><span></span></div>';
+  h+='<div class="note">投資＝付加価値、現状維持＝維持管理。配分ページの「価値区分別」で目標との差が見られます。</div>';
 
   h+='<h2>PJ一覧</h2>';
   S.projects.forEach((p,i)=>{
@@ -1863,6 +1899,7 @@ function cfgOpen(){
 function setAlert(v){S.alertMin=parseInt(v,10)||60;_alerted=false;save();render();}
 function setWorkH(v){S.workH=parseFloat(v)||8;save();cfgOpen();}
 function setVhTarget(v){S.vhTarget=parseInt(v,10)||50;save();cfgOpen();}
+function setWasteTarget(v){S.wasteTarget=parseInt(v,10);if(isNaN(S.wasteTarget))S.wasteTarget=10;save();cfgOpen();}
 function addPj(){const v=document.getElementById('newPj').value.trim();if(!v)return;S.projects.push(v);save();cfgOpen();render();}function delPj(i){if(S.projects.length<=1)return;S.projects.splice(i,1);save();cfgOpen();render();}
 function addCat(){const v=document.getElementById('newCat').value.trim();if(!v)return;S.cats.push({n:v,v:'keep'});save();cfgOpen();render();}
 function delCat(i){if(S.cats.length<=1)return;S.cats.splice(i,1);save();cfgOpen();render();}
