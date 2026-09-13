@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.22.0 (2026-08-28): 目標管理を強化。設定にムダの上限目標を追加し、価値区分別の円グラフに投資目標の位置マーカーと、投資・ムダそれぞれの目標達成／不足pt（時間換算つき）を表示。週次・月次のサマリーも「記録カバー率＝所定時間×平日数に対する記録率」に変更した。
+  ver.1.41.1 (2026-09-13): 「PJを選ぶ」のフェーズタグを、バッジ（開／生／定）とPJ名と同じ高さ（30px・13px太字）に大きくした。位置は右詰めのまま。あわせて生産のフェーズを「1. 継続的改善活動」の1件だけにし、「改善の実施」を削除した（過去の記録に残る名前はそのまま）。
 -->
 <style>
   :root{
@@ -38,7 +38,7 @@
   .head{
     background:linear-gradient(180deg,#232C36,#1A2129);
     border:1px solid var(--line);border-radius:14px;
-    padding:14px 16px 16px;position:relative;overflow:hidden;
+    padding:12px 14px 14px;position:relative;overflow:hidden;flex:0 0 auto;
   }
   .head::before{
     content:"";position:absolute;inset:0 0 auto 0;height:1px;
@@ -49,7 +49,7 @@
   .badge{font-size:11px;color:var(--mute);letter-spacing:.12em;text-transform:uppercase;}
 
   .display{
-    margin-top:10px;text-align:center;
+    margin-top:8px;text-align:center;
   }
   .elapsed{
     font-family:var(--mono);font-weight:600;
@@ -58,7 +58,7 @@
     letter-spacing:.02em;
     text-shadow:0 0 22px rgba(255,176,32,.28);
   }
-  .elapsed.idle{color:#3D4855;text-shadow:none;}
+  .elapsed.idle{color:#3D4855;text-shadow:none;font-size:clamp(30px,9vw,40px);}
   .elapsed.over{color:var(--rec);text-shadow:0 0 22px rgba(229,72,77,.35);}
   .runbanner{
     display:flex;align-items:center;gap:8px;
@@ -99,17 +99,20 @@
   h2::after{content:"";flex:1;height:1px;background:var(--line);}
 
   /* ── クイック打刻 ── */
+  /* ── クイック打刻（v1.22.0 と同じ2列グリッド） ── */
   .quick{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;}
   .qbtn{
     position:relative;
     background:var(--panel);border:1px solid var(--line);border-radius:11px;
-    padding:12px 34px 12px 12px;text-align:left;cursor:pointer;color:var(--txt);
+    padding:12px 34px 12px 14px;text-align:left;cursor:pointer;color:var(--txt);
     font-family:var(--sans);min-height:64px;min-width:0;overflow:hidden;
     display:flex;flex-direction:column;justify-content:center;gap:2px;
   }
+  .qbtn::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:currentColor;}
   .qbtn:active{background:var(--panel-2);transform:scale(.98);}
-  .qbtn .cat{font-size:15px;font-weight:600;line-height:1.3;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .qbtn .cat{font-size:15px;font-weight:600;line-height:1.3;color:var(--txt);min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .qbtn .pj{font-size:11px;color:var(--mute);min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .qbtn .cat .gtag{width:16px;height:16px;font-size:9px;border-radius:3px;margin-right:5px;}
   .qbtn .star{
     position:absolute;top:6px;right:6px;width:28px;height:28px;
     display:flex;align-items:center;justify-content:center;
@@ -118,23 +121,80 @@
   .qbtn .star.on{color:var(--amber);}
   .qbtn .star:active{background:var(--panel-2);}
   .qbtn.add{align-items:center;justify-content:center;color:var(--amber);border-style:dashed;font-size:22px;padding:12px;}
+  .qbtn.add::before{display:none;}
+  /* 業務分類の色分け：現場対応＝金色 / それ以外（机・移）＝銀色 */
+  .g-field{color:#D6B25E;}
+  .g-desk{color:#AFBAC5;}
+  .opt.g-field{background:rgba(214,178,94,.13);border-color:rgba(214,178,94,.38);}
+  .opt.g-desk{background:rgba(175,186,197,.13);border-color:rgba(175,186,197,.38);}
+  .opt .onm{color:var(--txt);font-size:16px;}
+  /* 1文字バッジ（現／机／移）。正方形の枠で見出しを短く保つ */
+  .gtag{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:19px;height:19px;font-size:11px;line-height:1;border-radius:4px;
+    border:1px solid currentColor;margin-right:6px;font-weight:700;
+    flex:0 0 auto;vertical-align:middle;
+  }
+  .g-field>.gtag,.g-field .gtag,.gtag.g-field{color:#D6B25E;}
+  .g-desk>.gtag,.g-desk .gtag,.gtag.g-desk{color:#AFBAC5;}
+  /* 打刻の業務分類カード：バッジと分類名を同じ高さで並べ、価値区分は半分の高さで上揃え */
+  /* ── 一覧カードの共通形（業務分類・PJ・フェーズで統一）──
+     ［1文字バッジ］ 大きな名前 ［小さいタグ］ … ［★］  左に5pxの色帯 */
+  .opt.catopt{display:flex;align-items:flex-start;gap:9px;padding:14px 16px;position:relative;overflow:hidden;padding-left:20px;}
+  .opt.catopt::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:currentColor;}
+  .opt.catopt.k-pj{color:#AFBAC5;background:rgba(175,186,197,.10);border-color:rgba(175,186,197,.34);}
+  .opt.catopt.k-ph{color:var(--amber);background:rgba(255,176,32,.09);border-color:rgba(255,176,32,.32);}
+  .opt.catopt.k-none{color:#5A6673;background:transparent;border-style:dashed;}
+  .opt .gtag.big{
+    width:30px;height:30px;font-size:18px;border-radius:6px;border-width:2px;
+    margin-right:0;align-self:flex-start;
+  }
+  .opt .gtag.big.num{font-family:var(--mono);font-size:16px;}
+  .opt .gtag.big.num.on{background:var(--amber);color:#12161B;border-color:var(--amber);}
+  .opt .cnm{
+    flex:1 1 auto;min-width:0;color:var(--txt);
+    font-size:22px;font-weight:700;line-height:30px;
+  }
+  .opt.catopt .vtag{
+    flex:0 0 auto;align-self:flex-start;margin-right:0;
+    height:15px;line-height:13px;font-size:10px;padding:0 6px;
+    border:1px solid currentColor;border-radius:4px;display:inline-block;
+  }
+  /* PJカードのフェーズタグはバッジ・PJ名と同じ高さ（右詰め） */
+  .opt.catopt .ctag{
+    flex:0 1 auto;min-width:0;align-self:flex-start;margin-right:0;
+    height:30px;line-height:26px;font-size:13px;font-weight:700;padding:0 10px;
+    border:2px solid currentColor;border-radius:6px;display:inline-block;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mute);
+  }
+  .opt.catopt .ctag.on{color:var(--amber);}
+  .opt.catopt .ostar{position:static;transform:none;align-self:center;margin-left:2px;flex:0 0 auto;}
+  .opt.catopt.reg{cursor:default;}
+  .listrow.g-field{border-left:4px solid #D6B25E;}
+  .listrow.g-desk{border-left:4px solid #AFBAC5;}
+  .listrow .gtag{flex:0 0 auto;}
+
+
 
   /* ── 実績リスト ── */
   .entry{
-    display:flex;align-items:center;gap:10px;
+    display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;
     background:var(--panel);border:1px solid var(--line);
     border-radius:12px;padding:12px;margin-bottom:8px;
   }
-  .entry .time{font-family:var(--mono);font-size:12px;color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums;}
-  .entry .body{flex:1;min-width:0;}
-  .entry .t1{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .entry .t2{font-size:11px;color:var(--mute);margin-top:2px;}
+  .entry .time{order:1;font-family:var(--mono);font-size:12px;color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .entry .dur{order:2;margin-left:auto;}
+  .entry .rowbtn,.entry .sentmark{order:3;}
+  .entry .body{order:4;flex:1 1 100%;min-width:0;}
+  .entry .t1{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .entry .t2 .phtag{max-width:none;}
+  .entry .t2{font-size:12px;color:var(--mute);margin-top:3px;line-height:1.45;}
   .entry .dur{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;}
   .entry.sent{opacity:.5;}
   .entry.sent .dur{color:var(--ok);}
   /* 実績行の操作ボタン（大きめ・タップしやすく） */
   .rowbtn{
-    flex:0 0 auto;width:42px;height:42px;border-radius:10px;
+    flex:0 0 auto;width:40px;height:38px;border-radius:10px;
     display:flex;align-items:center;justify-content:center;
     border:1px solid var(--line);background:var(--panel-2);cursor:pointer;padding:0;
   }
@@ -145,13 +205,18 @@
   .rowbtn.trash svg{stroke:#5A6673;}
   .rowbtn.trash:active{background:#3A2226;}
   .sentmark{
-    flex:0 0 auto;width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+    flex:0 0 auto;width:40px;height:38px;display:flex;align-items:center;justify-content:center;
     color:var(--ok);
   }
   .sentmark svg{width:20px;height:20px;stroke:var(--ok);}
   .vtag{
     display:inline-block;font-size:10px;padding:1px 5px;border-radius:4px;margin-right:5px;
     border:1px solid currentColor;
+  }
+  .phtag{
+    display:inline-block;font-size:10px;padding:1px 6px;margin-left:6px;border-radius:4px;
+    background:var(--panel-2);color:var(--mute);border:1px solid var(--line);
+    vertical-align:middle;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .v-add{color:var(--ok);}
   .v-keep{color:#6E9CD2;}
@@ -208,6 +273,7 @@
   .segbtn.on:active{background:var(--amber);}
   .seg.sub{margin-top:7px;}
   .seg.sub .segbtn{font-size:14px;padding:12px 2px;}
+  .seg.sub.q4 .segbtn{font-size:12.5px;padding:12px 1px;letter-spacing:-.02em;}
 
   /* ── 日付チップ（日ごと表示の日付選択） ── */
   .chips{
@@ -418,7 +484,9 @@
     padding:16px;text-align:center;
   }
   .confirm-card .cc-pj{font-size:14px;color:var(--mute);margin-bottom:4px;}
-  .confirm-card .cc-cat{font-size:19px;font-weight:700;margin-bottom:10px;}
+  .confirm-card .cc-ph .phtag{margin-left:0;max-width:none;font-size:12px;padding:3px 9px;}
+  .confirm-card .cc-cat{font-size:19px;font-weight:700;margin-bottom:6px;}
+  .confirm-card .cc-ph{margin-bottom:8px;}
   .confirm-card .cc-time{font-family:var(--mono);font-size:15px;color:var(--txt);}
   .confirm-card .cc-time b{color:var(--amber);}
   .opt{
@@ -428,6 +496,43 @@
   }
   .opt:active{background:var(--panel-2);}
   .opt .sub{font-size:11px;color:var(--mute);margin-top:2px;}
+  /* 選択リストの★お気に入り（PJ・フェーズ） */
+  .opt.hasstar{position:relative;padding-right:52px;}
+  .opt .ostar{
+    position:absolute;top:50%;right:6px;transform:translateY(-50%);
+    width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+    font-size:18px;color:#4C5967;border-radius:10px;
+  }
+  .opt .ostar.on{color:var(--amber);}
+  .opt .ostar:active{background:var(--panel-2);}
+  .opt.fav{border-color:rgba(245,176,65,.45);}
+  /* 設定（PJ一覧）の★ボタン */
+  .listrow .nm{min-width:0;}
+  /* 設定の一覧も同じ形にそろえる */
+  .listrow.card{position:relative;overflow:hidden;padding-left:16px;gap:9px;}
+  .listrow.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:currentColor;}
+  .listrow.card.k-pj{color:#AFBAC5;}
+  .listrow.card .gtag.big{width:26px;height:26px;font-size:15px;border-radius:5px;border-width:2px;margin-right:0;flex:0 0 auto;}
+  .listrow.card .nm.big{font-size:17px;font-weight:700;color:var(--txt);line-height:1.3;}
+  .listrow>select,.listrow>.mini{flex:0 0 auto;}
+  /* フェーズの登録カード（設定） */
+  .reglabel{font-size:11px;color:var(--mute);font-weight:700;letter-spacing:.04em;margin:14px 0 6px;}
+  .listrow .pcount{display:block;font-size:10.5px;color:var(--mute);margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .opt .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mini.favbtn{flex:0 0 auto;width:42px;min-height:42px;padding:0;font-size:17px;line-height:1;color:#4C5967;
+    display:flex;align-items:center;justify-content:center;}
+  .mini.favbtn.on{color:var(--amber);border-color:rgba(255,176,32,.55);}
+  /* フェーズの付与トグル（設定） */
+  .ghead{font-size:11px;color:var(--mute);font-weight:700;margin:2px 0 6px;letter-spacing:.04em;}
+  .ghead.f{color:var(--amber);}
+  /* 打刻シートの手順バー（PJ ▸ 業務分類 ▸ フェーズ） */
+  .flow{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:11.5px;margin:-6px 0 12px;}
+  .flow span{padding:3px 8px;border-radius:6px;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
+  .flow .cur{background:var(--amber);color:#12161B;font-weight:700;}
+  .flow .done{background:var(--panel-2);border:1px solid var(--line);color:var(--txt);}
+  .flow .todo{color:var(--mute);}
+  .flow i{font-style:normal;color:#4C5967;}
   .closebtn{
     width:100%;background:var(--panel-2);border:1px solid #3E4A57;border-radius:12px;
     padding:15px;color:var(--txt);font-size:16px;font-weight:600;margin-top:12px;
@@ -453,6 +558,25 @@
     border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:5px;
   }
   .listrow .nm{flex:1;font-size:14px;}
+  .phgrid{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px;}
+  .phopt{
+    background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    padding:11px 13px;color:var(--mute);font-size:14px;font-family:var(--sans);cursor:pointer;
+  }
+  .phopt.on{background:var(--amber);border-color:var(--amber);color:#12161B;font-weight:700;}
+  .phopt:active{transform:scale(.97);}
+  /* 打刻2画面目：PJの見出し＋そのPJのフェーズボタン */
+  .pjhead{
+    display:flex;align-items:center;gap:6px;margin:16px 0 2px;
+    font-size:14px;font-weight:700;color:var(--txt);
+  }
+  .pjhead:first-of-type{margin-top:4px;}
+  .pjhead .phtag{margin-left:0;}
+  /* フェーズの付与トグル（設定）：OFFは点線＋グレー、ONはアンバー */
+  .phopt.pick{color:var(--mute);border-style:dashed;}
+  .phopt.pick.on{background:var(--amber);border-color:var(--amber);border-style:solid;color:#12161B;font-weight:700;}
+  .phopt.pick:active{transform:scale(.96);}
+  .phopt.none{color:var(--mute);border-style:dashed;}
   .note{font-size:12px;color:var(--mute);line-height:1.6;margin:10px 0;}
 
   .toast{
@@ -499,7 +623,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.22.0</div>
+  <div class="ver">ver.1.41.1</div>
 </div>
 
 <div class="dock">
@@ -526,31 +650,32 @@ function save(){
 
 /* ═══════ 初期データ ═══════ */
 const DEFAULT={
-  projects:['プロジェクトA','プロジェクトB','共通/量産','脱属人化/標準化'],
+  projects:['開発1','開発2','開発3','生産','定常'],
+  pjKind:{'開発1':'dev','開発2':'dev','開発3':'dev','生産':'prod','定常':'std'},
   cats:[
-    {n:'本業務(設計・検討・TRY・立合・確認)',v:'add'},
-    {n:'会議・打合せ',v:'keep'},
-    {n:'資料作成',v:'add'},
+    {n:'現場対応(調査)',v:'add'},
+    {n:'現場対応(準備)',v:'add'},
+    {n:'現場対応(実行、立ち合い、後片付け)',v:'add'},
+    {n:'現場対応(後片付け)',v:'add'},
+    {n:'現場対応(設備トラブル、ワークの品質)',v:'add'},
+    {n:'現場対応(製造支援)',v:'add'},
+    {n:'会議',v:'add'},
+    {n:'資料作成(準備)',v:'add'},
+    {n:'資料作成(後片づけ)',v:'add'},
     {n:'管理・マネジメント',v:'keep'},
-    {n:'教育・移譲・自己啓発',v:'add'},
-    {n:'改善活動',v:'keep'},
-    {n:'トラブル対応・手戻り・待ち',v:'waste'},
-    {n:'折衝・調整',v:'keep'},
     {n:'メール対応',v:'keep'},
-    {n:'移動',v:'waste'},
-    {n:'トランスクリプト収集・議事録作成',v:'add'}
+    {n:'トランスクリプト収集・議事録作成',v:'add'},
+    {n:'移動',v:'waste'}
   ],
   entries:[],
   running:null,
   mode:'ics',
-  favs:[],
   alertMin:60
 };
 let S=load()||JSON.parse(JSON.stringify(DEFAULT));
 if(!S.projects) S=JSON.parse(JSON.stringify(DEFAULT));
 if(!S.mode) S.mode='outlook';
 S.mode='outlook'; // 転送はOutlook直リンクに固定（標準カレンダー方式は廃止）
-if(!S.favs) S.favs=[];
 if(typeof S.alertMin!=='number') S.alertMin=60;
 // マトリクスの表示対象（既定：日次・当日）
 if(['day','week','month'].indexOf(S.mtxMode)<0) S.mtxMode='day';
@@ -559,6 +684,163 @@ if(typeof S.mtxPct!=='boolean') S.mtxPct=true;      // 構成比の表示
 if(typeof S.workH!=='number') S.workH=8;            // 1日の所定労働時間（記録カバー率の分母）
 if(typeof S.vhTarget!=='number') S.vhTarget=50;     // 投資（付加価値）割合の目標(%)
 if(typeof S.wasteTarget!=='number') S.wasteTarget=10; // ムダ割合の上限目標(%)
+// PJの種別（PJ名 → 'dev' | 'prod' | 'std'）。フェーズはこの種別から決まる
+if(!S.pjKind||typeof S.pjKind!=='object'||Array.isArray(S.pjKind)) S.pjKind={};
+// 改善活動は「将来の時間を生む活動」として付加価値（投資）に移行（1回だけ実施）
+if(!S.migKaizen){
+  const _k=(S.cats||[]).find(c=>c.n==='改善活動');
+  if(_k&&_k.v==='keep') _k.v='add';
+  S.migKaizen=true;
+}
+
+/* ── フェーズ ──────────────────────────────────────────
+   打刻キーの区切り文字。v1.26.0 で「PJ|分類」→「PJ|分類|フェーズ」の3要素に変更した。
+   既存利用者の★お気に入りは 2要素で保存されているため、初回起動時に一度だけ末尾を補う。 */
+const FSEP='\u0001';
+const PHASE_NONE='（フェーズ未設定）';
+/* PJの種別ごとにフェーズを固定で持つ。表記ゆれを防ぎ、PJをまたいで集計を揃えるため、
+   利用者はフェーズ名を編集できない。PJ一覧で種別を選ぶだけでフェーズが決まる。 */
+const PJ_KINDS=[
+  {k:'dev', n:'開発', phases:['量産化検討','工程計画立案・実施','安全計画立案・実施','法規・人員の手続き',
+    '治工具計画立案・実施','設備計画立案・実施','工事管理','物流計画立案・実施','品質計画立案・実施',
+    '工試・生試の準備・実施','移行判断','立ち上げ後確認(3か月)']},
+  {k:'prod', n:'生産', phases:['継続的改善活動']},
+  {k:'std', n:'定常', phases:['育成計画の立案・実施','計画・進捗の管理','会議体の運営']}
+];
+/* ── PJは「同じ名前でも別物として扱える」よう、1件ずつ id を持つオブジェクトにした（v1.38.0）
+   { id, n:名前, k:種別, ph:付与フェーズ（無ければ種別の全量）, fav:★ }                         ── */
+function newPjId(){ return 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function migProjects(){
+  if(!Array.isArray(S.projects)){ S.projects=[]; return; }
+  if(S.projects.length && typeof S.projects[0]==='object' && S.projects[0] && S.projects[0].id) return;
+  S.projects=S.projects.map(x=>{
+    const n=(typeof x==='string')?x:((x&&x.n)||'');
+    const o={id:newPjId(), n:n};
+    const k=(S.pjKind&&S.pjKind[n])||'';
+    if(kindDef(k)) o.k=k;
+    const ph=S.pjPhases&&S.pjPhases[n];
+    if(Array.isArray(ph)) o.ph=ph.slice();
+    if(Array.isArray(S.favPj)&&S.favPj.indexOf(n)>=0) o.fav=true;
+    return o;
+  }).filter(o=>o.n);
+  delete S.pjKind; delete S.pjPhases; delete S.favPj;   // 名前をキーにした旧データは廃止
+}
+/* 記録（entry.pj）は名前で持つため、集計・編集は「重複を除いた名前」で扱う */
+function pjNames(){ const a=[]; S.projects.forEach(p=>{ if(a.indexOf(p.n)<0) a.push(p.n); }); return a; }
+function phasesOfName(n){
+  const out=[];
+  S.projects.filter(p=>p.n===n).forEach(p=>phasesOf(p).forEach(x=>{ if(out.indexOf(x)<0) out.push(x); }));
+  return out;
+}
+function kindOf(p){ return (p&&p.k)||''; }
+function kindDef(k){ return PJ_KINDS.find(x=>x.k===k)||null; }
+function kindName(k){ const d=kindDef(k); return d?d.n:'未設定'; }
+/* 種別の1文字バッジ（業務分類の 現／机／移 と同じ見せ方にそろえる） */
+function kindBadge(k){ return k==='dev'?'開':k==='prod'?'生':k==='std'?'定':'－'; }
+/* 種別が持つフェーズの全量。番号はこの並びで決まる（付与を外しても番号は変わらない） */
+function allPhasesOf(p){ const d=kindDef(kindOf(p)); return d?d.phases:[]; }
+/* そのPJに実際に付与されているフェーズ。p.ph が無ければ種別の全量 */
+function phasesOf(p){
+  const all=allPhasesOf(p);
+  if(!p||!Array.isArray(p.ph)) return all;
+  return all.filter(x=>p.ph.indexOf(x)>=0);
+}
+function isPhaseOn(p,ph){ return !p||!Array.isArray(p.ph)||p.ph.indexOf(ph)>=0; }
+/* ── PJに登録するフェーズ（v1.40.0）─────────────────────────────
+   p.ph の意味
+     undefined … 未登録（打刻のときにフェーズ一覧から選ぶ＝従来どおり3タップ）
+     [名前]    … 登録済み（打刻は 業務分類 → PJ の2タップ。フェーズは自動で入る）
+     []        … フェーズを使わない（2タップ・フェーズ空）
+   フェーズは「時期」を表すため、1つのPJに1つだけ登録する。
+   時期ごとに分けたいときは、同じ名前のPJを追加して別のフェーズを登録する。 */
+function regPhase(p){ return (p&&Array.isArray(p.ph)&&p.ph.length===1)?p.ph[0]:''; }
+function phaseState(p){
+  if(!kindOf(p)) return 'nokind';
+  if(!Array.isArray(p&&p.ph)) return 'unset';
+  if(p.ph.length===1) return 'reg';
+  if(p.ph.length===0) return 'none';
+  return 'multi';   // v1.39以前の複数付与データ
+}
+/* PJの副題：「開発　1. 量産化検討」のように 種別＋付与したフェーズ名で表す（v1.37.1） */
+/* PJカードの小タグ。種別はバッジ（開／生／定）が表すので、フェーズの状態だけを出す */
+function pjTagLabel(p){
+  const st=phaseState(p);
+  if(st==='nokind') return '種別 未設定';
+  if(st==='reg')    return phaseNoLabel(regPhase(p));
+  if(st==='none')   return 'フェーズなし';
+  if(st==='unset')  return 'フェーズ未登録';
+  return phasesOf(p).length+'件から選ぶ';
+}
+function phaseOf(e){ return e&&e.phase?e.phase:''; }
+function phaseLabel(p){ return p||PHASE_NONE; }
+/* クイック打刻のキー。v1.35.0 で「PJ|業務分類|フェーズ」の3要素に戻した（区切りは FSEP） */
+function favKey(pj,cat,phase){ return pj+FSEP+cat+FSEP+(phase||''); }
+if(!Array.isArray(S.favs)) S.favs=[];
+delete S.favPh;   // v1.36.0 のフェーズ単位★は廃止（v1.37.0）
+migProjects();    // v1.38.0：PJを {id,n,k,ph,fav} のオブジェクトへ（旧データからの移行を含む）
+/* ── v1.39.0：一度だけ、業務分類を最新の標準セット（13件）に合わせる ──
+   端末（URL）ごとに保存された前のバージョンの分類が残り、アプリを更新しても
+   古い一覧のままになる問題への対処。記録（S.entries）は触らないので工数は消えない。
+   PJ名は各自が実名を登録する運用のため自動では消さず、昔の仮名（プロジェクトA…）のときだけ入れ替える。 */
+let _migStdDone='';
+if(!S.migStd139){
+  if(!catsAreStandard()){
+    S.cats=JSON.parse(JSON.stringify(DEFAULT.cats));
+    _migStdDone='業務分類';
+  }
+  const _names=(S.projects||[]).map(x=>x&&x.n);
+  const _isOldPlaceholder=_names.length>0 && _names.every(n=>/^プロジェクト/.test(String(n||'')));
+  if(_isOldPlaceholder){
+    S.projects=DEFAULT.projects.map(n=>{
+      const o={id:newPjId(), n:n};
+      const k=DEFAULT.pjKind[n];
+      if(kindDef(k)) o.k=k;
+      return o;
+    });
+    _migStdDone=_migStdDone?'業務分類とPJ一覧':'PJ一覧';
+  }
+  S.migStd139=true;
+}
+delete S.dial; delete S.selCat;     // v1.30〜1.34 のダイヤル方式は廃止
+/* フェーズの通し番号（種別ごとの並び順）。表示だけに使い、記録には名前を入れる */
+function phaseNo(phase){
+  for(let i=0;i<PJ_KINDS.length;i++){
+    const j=PJ_KINDS[i].phases.indexOf(phase);
+    if(j>=0) return j+1;
+  }
+  return 0;
+}
+function phaseNoLabel(phase){
+  const no=phaseNo(phase);
+  return no? no+'. '+phase : phase;
+}
+/* 業務分類の色分け：現場対応＝金色 / それ以外（机・移）＝銀色 */
+function isGenba(cat){ return String(cat||'').indexOf('現場対応')===0; }
+function gClass(cat){ return isGenba(cat)?'g-field':'g-desk'; }
+/* いまの業務分類が標準セット（13件）と同じかどうか。古い端末データの検知に使う */
+function catsAreStandard(){
+  const a=(S.cats||[]).map(c=>c.n), b=DEFAULT.cats.map(c=>c.n);
+  return a.length===b.length && a.every((n,i)=>n===b[i]);
+}
+/* いまのPJ一覧が標準（開発1〜3・生産・定常）と同じかどうか */
+function pjsAreStandard(){
+  const a=(S.projects||[]).map(p=>p&&p.n), b=DEFAULT.projects;
+  return a.length===b.length && a.every((n,i)=>n===b[i]);
+}
+/* 打刻の選択画面では「現場対応」の接頭辞をバッジ（現）が表すので、名前からは外して大きく見せる */
+function catShort(cat){
+  const t=String(cat||'');
+  if(!isGenba(t)) return t;
+  const m=t.match(/^現場対応[（(]?([^）)]*)[）)]?$/);
+  const inner=(m&&m[1])?m[1].trim():'';
+  return inner||t;
+}
+/* バッジは1文字。現＝現場対応、移＝移動、机＝それ以外（机上ほか） */
+function gLabel(cat){
+  if(isGenba(cat)) return '現';
+  if(String(cat||'').indexOf('移動')===0) return '移';
+  return '机';
+}
 
 const VLABEL={add:'付加価値',keep:'維持管理',waste:'ムダ'};
 const VCLASS={add:'v-add',keep:'v-keep',waste:'v-waste'};
@@ -691,7 +973,8 @@ function render(){
   if(S.running){
     el.classList.remove('idle');
     el.textContent=dur(Date.now()-S.running.start);
-    ni.innerHTML='<span class="recdot"></span>'+esc(S.running.cat)+' <span class="pj">／ '+esc(S.running.pj)+'</span>';
+    const _rp=phaseOf(S.running);
+    ni.innerHTML='<span class="recdot"></span>'+esc(S.running.pj)+' <span class="pj">／ <span class="gtag '+gClass(S.running.cat)+'">'+gLabel(S.running.cat)+'</span>'+esc(catShort(S.running.cat))+(_rp?'・'+esc(_rp):'')+'</span>';
     st.textContent='計測中';st.style.color='var(--rec)';
     sb.style.display='block';
   }else{
@@ -702,75 +985,42 @@ function render(){
   }
 
   // クイックボタン（★お気に入り固定 → 頻度順 で最大9件）
-  const SEP='\u0001';
-  const favs=(S.favs||[]).slice();               // 固定（順序保持）
+  const favs=(S.favs||[]).slice();
   const freq={};
-  S.entries.slice(-80).forEach(e=>{const k=e.pj+SEP+e.cat;freq[k]=(freq[k]||0)+1;});
-  // 頻度順（★は除外して重複回避）
-  const byFreq=Object.keys(freq).filter(k=>!favs.includes(k)).sort((a,b)=>freq[b]-freq[a]);
-  let keys=favs.concat(byFreq).slice(0,9);
-  if(keys.length===0){
-    keys=[S.projects[0]+SEP+S.cats[0].n, S.projects[0]+SEP+(S.cats[2]?S.cats[2].n:S.cats[0].n)];
+  S.entries.slice(-80).forEach(e=>{const k=favKey(e.pj,e.cat,phaseOf(e));freq[k]=(freq[k]||0)+1;});
+  const byFreq=Object.keys(freq).filter(k=>favs.indexOf(k)<0).sort((a,b)=>freq[b]-freq[a]);
+  // いまの一覧に無いPJ・業務分類（前のバージョンの名前）はボタンに出さない
+  const _liveCat=n=>S.cats.some(c=>c.n===n), _livePj=n=>S.projects.some(x=>x.n===n);
+  let keys=favs.concat(byFreq).filter(k=>{
+    const kp=String(k).split(FSEP);
+    return _livePj(kp[0]) && _liveCat(kp[1]);
+  }).slice(0,9);
+  if(keys.length===0 && S.projects[0] && S.cats[0]){
+    keys=[favKey(S.projects[0].n,S.cats[0].n,''), favKey(S.projects[0].n,(S.cats[6]||S.cats[0]).n,'')];
   }
   const q=document.getElementById('quick');
   q.innerHTML='';
   keys.forEach(k=>{
-    const [pj,cat]=k.split(SEP);
-    const isFav=favs.includes(k);
+    const kp=String(k).split(FSEP), pj=kp[0], cat=kp[1], phase=kp[2]||'';
+    const isFav=favs.indexOf(k)>=0;
     const b=document.createElement('button');
-    b.className='qbtn';
-    b.innerHTML='<span class="cat">'+esc(cat)+'</span><span class="pj">'+esc(pj)+'</span>'+
+    b.className='qbtn '+gClass(cat);
+    const sub=esc(pj)+(phase?'・'+esc(phaseNoLabel(phase)):'');
+    b.innerHTML='<span class="cat"><span class="gtag">'+gLabel(cat)+'</span>'+esc(catShort(cat))+'</span><span class="pj">'+sub+'</span>'+
       '<span class="star'+(isFav?' on':'')+'" role="button" aria-label="お気に入り固定">'+(isFav?'★':'☆')+'</span>';
-    b.onclick=()=>start(pj,cat);
-    const star=b.querySelector('.star');
-    star.onclick=(ev)=>{ev.stopPropagation();toggleFav(k);};
+    b.onclick=()=>start(pj,cat,phase);
+    b.querySelector('.star').onclick=(ev)=>{ev.stopPropagation();toggleFav(k);};
     q.appendChild(b);
   });
   const add=document.createElement('button');
   add.className='qbtn add';add.textContent='＋';
   add.setAttribute('aria-label','項目を選んで開始');
-  add.onclick=pickProject;
+  add.onclick=pickCat;
   q.appendChild(add);
 
   // 今日の実績
-  const today=dkey(Date.now());
-  const list=S.entries.filter(e=>dkey(e.start)===today).sort((a,b)=>b.start-a.start);
-  const box=document.getElementById('entries');
-  box.innerHTML='';
-  if(list.length===0){
-    box.innerHTML='<div class="empty">まだ記録がありません</div>';
-  }
-  list.forEach(e=>{
-    const c=catOf(e.cat);
-    const d=document.createElement('div');
-    d.className='entry'+(e.sent?' sent':'');
-    d.innerHTML=
-      '<span class="time">'+hm(e.start)+'<br>'+hm(e.end)+'</span>'+
-      '<span class="body"><span class="t1">'+esc(e.pj)+'</span>'+
-      '<span class="t2"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+esc(e.cat)+'</span></span>'+
-      '<span class="dur">'+hDec(e.end-e.start)+'</span>';
-    let snd=null;
-    if(!e.sent){
-      snd=document.createElement('button');
-      snd.className='rowbtn send';
-      snd.setAttribute('aria-label','この記録をOutlookへ追加');
-      snd.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>';
-      snd.onclick=(ev)=>{ev.stopPropagation();sendOne(e.id);};
-      d.appendChild(snd);
-    }else{
-      const mk=document.createElement('span');
-      mk.className='sentmark';mk.title='転送済';
-      mk.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>';
-      d.appendChild(mk);
-    }
-    const del=document.createElement('button');
-    del.className='rowbtn trash';del.setAttribute('aria-label','削除');
-    del.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6"></path></svg>';
-    del.onclick=(ev)=>{ ev.stopPropagation(); if(confirm('この記録を削除しますか？')){S.entries=S.entries.filter(x=>x.id!==e.id);save();render();} };
-    d.appendChild(del);
-    d.onclick=ev=>{ if(ev.target===d || (ev.target.closest && ev.target.closest('.body,.time,.dur'))) editEntry(e.id); };
-    box.appendChild(d);
-  });
+  const list=todayEntries();
+  renderEntries(document.getElementById('entries'), list);
 
   // マトリクスは別ページ（openMatrix）で表示。ボタンに当日合計を表示
   const mtxBtn=document.getElementById('mtxBtn');
@@ -856,11 +1106,20 @@ function prevPeriodKey(mode,key){
 }
 /* 集計（ms単位）。マトリクスの丸めとは別に、構成比・比較用に使う */
 function agg(list){
-  const byV={add:0,keep:0,waste:0},byPj={},byCat={};
-  let total=0;
-  list.forEach(e=>{ const ms=e.end-e.start,c=catOf(e.cat);
-    total+=ms; byV[c.v]+=ms; byPj[e.pj]=(byPj[e.pj]||0)+ms; byCat[e.cat]=(byCat[e.cat]||0)+ms; });
-  return {total,byV,byPj,byCat,days:new Set(list.map(e=>dkey(e.start))).size,n:list.length};
+  const byV={add:0,keep:0,waste:0},byPj={},byCat={},byPhase={};
+  let total=0, phased=0;
+  list.forEach(e=>{ const ms=e.end-e.start,c=catOf(e.cat),ph=phaseLabel(phaseOf(e));
+    total+=ms; byV[c.v]+=ms; byPj[e.pj]=(byPj[e.pj]||0)+ms; byCat[e.cat]=(byCat[e.cat]||0)+ms;
+    byPhase[ph]=(byPhase[ph]||0)+ms; if(phaseOf(e)) phased++; });
+  return {total,byV,byPj,byCat,byPhase,phased,days:new Set(list.map(e=>dkey(e.start))).size,n:list.length};
+}
+// フェーズが1件でも記録されているか（未使用なら出力に節を足さない）
+function hasPhase(list){ return list.some(e=>!!phaseOf(e)); }
+// フェーズ別の集計行（多い順）。時間は0.1h刻みに丸める
+function phaseRows(list){
+  const a=agg(list);
+  return Object.keys(a.byPhase).sort((x,y)=>a.byPhase[y]-a.byPhase[x])
+    .map(k=>({name:k, h:toDecH(a.byPhase[k]), pct:pctOf(a.byPhase[k],a.total)}));
 }
 function pctOf(part,total){ return total>0?Math.round(part/total*100):0; }
 // 期間内の平日数（未来の日は数えない）
@@ -931,7 +1190,7 @@ function buildMatrix(list, period='day', capSuffix, opt){
   const SEPM='\u0001';
   const cellMs={};
   list.forEach(e=>{ const k=e.pj+SEPM+e.cat; cellMs[k]=(cellMs[k]||0)+(e.end-e.start); });
-  const pjs=[]; S.projects.forEach(p=>{ if(list.some(e=>e.pj===p)) pjs.push(p); });
+  const pjs=[]; pjNames().forEach(n=>{ if(list.some(e=>e.pj===n)) pjs.push(n); });
   list.forEach(e=>{ if(!pjs.includes(e.pj)) pjs.push(e.pj); });
   const cats=[]; S.cats.forEach(c=>{ if(list.some(e=>e.cat===c.n)) cats.push(c.n); });
   list.forEach(e=>{ if(!cats.includes(e.cat)) cats.push(e.cat); });
@@ -985,6 +1244,11 @@ function matrixMonthlyExportCsv(mk){
     csv+=csvCell(r.cat)+','+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'').join(',')+','+fmtH(r.tot)+'\r\n';
   });
   csv+='合計,'+m.pjs.map(pj=>fmtH(m.colTot[pj])).join(',')+','+fmtH(m.grand)+'\r\n';
+  const _ml=monthlyEntries(mk);
+  if(hasPhase(_ml)){
+    csv+='\r\nフェーズ,時間,構成比\r\n';
+    phaseRows(_ml).forEach(r=>{ csv+=csvCell(r.name)+','+fmtH(r.h)+','+r.pct+'%\r\n'; });
+  }
   downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'kosu_matrix_'+mk+'.csv');
   toast(mk+' のマトリクスをCSVで書き出しました');
 }
@@ -996,12 +1260,17 @@ function matrixMonthlyMdText(m, mk){
     md+='| '+r.cat+' | '+m.pjs.map(pj=>r.row[pj]!=null?fmtH(r.row[pj]):'–').join(' | ')+' | '+fmtH(r.tot)+' |\n';
   });
   md+='| **合計** | '+m.pjs.map(pj=>'**'+fmtH(m.colTot[pj])+'**').join(' | ')+' | **'+fmtH(m.grand)+'** |\n';
+  const _ml=monthlyEntries(mk);
+  if(hasPhase(_ml)){
+    md+='\n## フェーズ別\n\n| フェーズ | 時間 | 構成比 |\n|---|--:|--:|\n';
+    phaseRows(_ml).forEach(r=>{ md+='| '+r.name+' | '+fmtH(r.h)+' | '+r.pct+'% |\n'; });
+  }
   return md;
 }
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.22.0 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.41.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1171,9 +1440,7 @@ function viewSummary(sel,a,pa,m){
 
 /* ページ2：グラフ（推移だけを大きく） */
 function viewChart(sel){
-  return trendChart(sel.mode,sel.key)+
-    '<div class="note">棒をタップすると、その'+MODE_LABEL[sel.mode].replace('次','')+'に切り替わります。'+
-    (sel.mode==='day'?'棒の下の「未送信／送信済」でOutlookへ送ったかが分かります。':'')+'</div>';
+  return trendChart(sel.mode,sel.key);
 }
 
 /* ページ3：マトリクス表だけ */
@@ -1246,8 +1513,8 @@ function donut(items,total,prevSrc,goal){
 const VAL_NAME={add:'投資',keep:'現状維持',waste:'ムダ'};
 const VAL_COLOR={add:'#3FB68B',keep:'#6E9CD2',waste:'#C97A9E'};
 function viewBreakdown(sel,a,pa){
-  const kind=['pj','cat','val'].indexOf(S.mtxPie)>=0?S.mtxPie:'pj';
-  let h='<div class="seg sub">'+[['pj','PJ別'],['cat','業務分類別'],['val','価値区分別']].map(k=>
+  const kind=['pj','cat','val','phase'].indexOf(S.mtxPie)>=0?S.mtxPie:'pj';
+  let h='<div class="seg sub q4">'+[['pj','PJ別'],['cat','業務分類別'],['val','価値区分別'],['phase','フェーズ別']].map(k=>
      '<button class="segbtn'+(kind===k[0]?' on':'')+'" onclick="setMtxPie(\''+k[0]+'\')">'+k[1]+'</button>').join('')+'</div>';
   if(!a.total) return h+'<div class="empty">まだ記録がありません</div>';
   let items,psrc;
@@ -1256,10 +1523,12 @@ function viewBreakdown(sel,a,pa){
     items=['add','keep','waste'].filter(v=>a.byV[v]>0).map(v=>({name:VAL_NAME[v],ms:a.byV[v],color:VAL_COLOR[v],v:v}));
     psrc=pa?{投資:pa.byV.add,現状維持:pa.byV.keep,ムダ:pa.byV.waste}:null;
   }else{
-    const src=kind==='pj'?a.byPj:a.byCat;
-    psrc=pa?(kind==='pj'?pa.byPj:pa.byCat):null;
+    const src=kind==='pj'?a.byPj:kind==='phase'?a.byPhase:a.byCat;
+    psrc=pa?(kind==='pj'?pa.byPj:kind==='phase'?pa.byPhase:pa.byCat):null;
     items=Object.keys(src).sort((x,y)=>src[y]-src[x]).map((k,i)=>({
       name:k, ms:src[k], color:PIE_COLORS[i%PIE_COLORS.length], v:kind==='cat'?catOf(k).v:null }));
+  }
+  if(kind==='phase'&&!hasPhase(sel.list||[])){
   }
   h+=donut(items,a.total,psrc,kind==='val'?(S.vhTarget||50):null);
   h+='<div class="pielegend">';
@@ -1359,6 +1628,10 @@ function matrixExportCsv(){
   });
   csv+='合計,'+m.pjs.map(pj=>fmtH(m.colTot[pj])).join(',')+','+fmtH(m.grand)+',100%\r\n';
   csv+='構成比,'+m.pjs.map(pj=>pc(m.colTot[pj])).join(',')+',100%,\r\n';
+  if(hasPhase(sel.list)){
+    csv+='\r\nフェーズ,時間,構成比\r\n';
+    phaseRows(sel.list).forEach(r=>{ csv+=csvCell(r.name)+','+fmtH(r.h)+','+r.pct+'%\r\n'; });
+  }
   downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.csv');
   toast(sel.title+' のマトリクスをCSVで書き出しました');
 }
@@ -1378,13 +1651,17 @@ function matrixMdText(m, sel){
   });
   md+='| **合計** | '+m.pjs.map(pj=>'**'+fmtH(m.colTot[pj])+'**').join(' | ')+' | **'+fmtH(m.grand)+'** | 100% |\n';
   md+='| 構成比 | '+m.pjs.map(pj=>pc(m.colTot[pj])).join(' | ')+' | 100% |  |\n';
+  if(hasPhase(sel.list)){
+    md+='\n## フェーズ別\n\n| フェーズ | 時間 | 構成比 |\n|---|--:|--:|\n';
+    phaseRows(sel.list).forEach(r=>{ md+='| '+r.name+' | '+fmtH(r.h)+' | '+r.pct+'% |\n'; });
+  }
   return md;
 }
 function matrixExportMd(){
   const sel=selInfo();
   const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.22.0 より出力_\n';
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.41.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1411,7 +1688,21 @@ function matrixBodyHtml(m, sel){
   html+='<tr><td style="border:1px solid #999;font-weight:bold;background:#f8f8f8;">合計</td>';
   m.pjs.forEach(pj=>{ html+='<td style="border:1px solid #999;text-align:right;font-weight:bold;background:#f8f8f8;">'+fmtH(m.colTot[pj])+'</td>'; });
   html+='<td style="border:1px solid #999;text-align:right;font-weight:bold;background:#f8f8f8;">'+fmtH(m.grand)+'</td></tr>';
-  html+='</table></div>';
+  html+='</table>';
+  if(hasPhase(sel.list)){
+    html+='<p style="margin:12px 0 4px;font-weight:bold;">フェーズ別</p>';
+    html+='<table style="border-collapse:collapse;font-size:12px;" cellpadding="6" cellspacing="0">';
+    html+='<tr><th style="border:1px solid #999;background:#f2f2f2;text-align:left;">フェーズ</th>'+
+          '<th style="border:1px solid #999;background:#f2f2f2;text-align:center;">時間</th>'+
+          '<th style="border:1px solid #999;background:#f2f2f2;text-align:center;">構成比</th></tr>';
+    phaseRows(sel.list).forEach(r=>{
+      html+='<tr><td style="border:1px solid #ccc;">'+esc(r.name)+'</td>'+
+            '<td style="border:1px solid #ccc;text-align:right;">'+fmtH(r.h)+'</td>'+
+            '<td style="border:1px solid #ccc;text-align:right;">'+r.pct+'%</td></tr>';
+    });
+    html+='</table>';
+  }
+  html+='</div>';
   return html;
 }
 function matrixTagLines(m, sel){
@@ -1421,6 +1712,9 @@ function matrixTagLines(m, sel){
       const v=m.cellVal[pj+m.SEPM+cat];
       if(v!=null) tags.push('#kosu-matrix PJ=['+pj+'] 分類=['+cat+'] 時間h=['+fmtH(v)+']');
     });
+  });
+  if(hasPhase(sel.list)) phaseRows(sel.list).forEach(r=>{
+    tags.push('#kosu-matrix フェーズ=['+r.name+'] 時間h=['+fmtH(r.h)+']');
   });
   return tags.map(esc).join('<br>');
 }
@@ -1511,9 +1805,113 @@ function toggleFav(k){
   }
   save();render();
 }
-function start(pj,cat){
+/* ── ★お気に入り（PJ・フェーズ）：選択リストの並び順だけに効く ── */
+function isFavPj(p){ return !!(p&&p.fav); }
+function _tog(arr,k){ const i=arr.indexOf(k); if(i>=0){arr.splice(i,1);return false;} arr.push(k); return true; }
+function _keepScroll(fn){
+  const el=document.getElementById('sheetIn');
+  const y=el?el.scrollTop:0;
+  fn();
+  const el2=document.getElementById('sheetIn');
+  if(el2) el2.scrollTop=y;
+}
+function togFavPj(ev,pi,ci){
+  ev.stopPropagation();
+  const p=S.projects[pi]; if(!p) return;
+  p.fav=!p.fav;
+  toast(p.fav?'★ '+p.n+' を上に固定しました':'固定を解除しました');
+  save(); _keepScroll(()=>pickPj(ci));
+}
+/* 設定（⚙）の PJ一覧 からの★切替 */
+function togFavPjCfg(pi,fromPhase){
+  const p=S.projects[pi]; if(!p) return;
+  p.fav=!p.fav;
+  toast(p.fav?'★ '+p.n+' を上に固定しました':'固定を解除しました');
+  save(); render();
+  if(fromPhase) phaseView(pi); else cfgOpen();
+}
+/* ★付きを先頭へ。番号や元の並び順は変えずに並べ替えるだけ */
+function favSort(items,isFav){
+  const f=items.filter(isFav), r=items.filter(x=>!isFav(x));
+  return {fav:f,rest:r};
+}
+/* ── 打刻の選択：業務分類 → PJ → フェーズ ── */
+function pickCat(){
+  let h='<h3>業務分類を選ぶ</h3>';
+  // 端末に前の設定（業務分類・PJ）が残っていると昔の並びのままになる。その場で戻せるようにする
+  const _cOk=catsAreStandard(), _pOk=pjsAreStandard();
+  if(!_cOk||!_pOk){
+    h+='<div class="warn slim">この端末には<b>前に使っていた設定が残っています</b>。'+
+       (!_cOk?'<br>・業務分類が標準セット（13件）と違います':'')+
+       (!_pOk?'<br>・PJ一覧が標準（開発1〜3・生産・定常）と違います':'')+
+       (!_cOk?'<button class="mini" style="width:100%;margin-top:8px" onclick="resetCatsHere()">業務分類を標準セット（13件）に戻す</button>':'')+
+       (!_pOk?'<button class="mini" style="width:100%;margin-top:6px" onclick="resetPjsHere()">PJ一覧を標準（開発1〜3・生産・定常）に戻す</button>':'')+
+       '<div style="margin-top:6px;font-size:11px">戻しても、打刻済みの工数は消えません。自分で登録した名前を使い続けたいときは、このまま閉じてください。</div></div>';
+  }
+  S.cats.forEach((c,i)=>{
+    h+='<button class="opt catopt '+gClass(c.n)+'" onclick="pickPj('+i+')">'+
+       '<span class="gtag big">'+gLabel(c.n)+'</span>'+
+       '<span class="cnm">'+esc(catShort(c.n))+'</span>'+
+       '<span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+
+       '</button>';
+  });
+  h+='<button class="closebtn" onclick="closeSheet()">キャンセル</button>';
+  openSheet(h);
+}
+function pickPj(ci){
+  const cat=S.cats[ci]?S.cats[ci].n:'';
+  let h='<h3>PJを選ぶ</h3>';
+  h+='<div class="note" style="margin-top:0"><span class="gtag '+gClass(cat)+'">'+gLabel(cat)+'</span>'+esc(catShort(cat))+'</div>';
+  const pjs=S.projects.map((p,i)=>({p:p,i:i}));
+  const g=favSort(pjs,x=>isFavPj(x.p));
+  const row=x=>{
+    const p=x.p, i=x.i, f=isFavPj(p), k=kindOf(p), st=phaseState(p), tag=pjTagLabel(p);
+    return '<button class="opt catopt k-pj'+(f?' fav':'')+'" onclick="afterPj('+i+','+ci+')">'+
+       '<span class="gtag big">'+kindBadge(k)+'</span>'+
+       '<span class="cnm">'+esc(p.n)+'</span>'+
+       '<span class="ctag'+(st==='reg'?' on':'')+'">'+esc(tag)+'</span>'+
+       '<span class="ostar'+(f?' on':'')+'" role="button" aria-label="よく使うPJに固定" onclick="togFavPj(event,'+i+','+ci+')">'+(f?'★':'☆')+'</span>'+
+       '</button>';
+  };
+  if(g.fav.length && g.rest.length){
+    h+='<div class="ghead f">★ よく使うPJ</div>';
+    g.fav.forEach(x=>h+=row(x));
+    h+='<div class="ghead">そのほか</div>';
+    g.rest.forEach(x=>h+=row(x));
+  }else{
+    g.fav.concat(g.rest).forEach(x=>h+=row(x));
+  }
+  h+='<button class="closebtn" onclick="pickCat()">戻る</button>';
+  openSheet(h);
+}
+// フェーズが決まっているPJだけ3段階目を出す（未設定なら2タップで開始）
+function afterPj(pi,ci){
+  const ph=phasesOf(S.projects[pi]);
+  // フェーズが1つに決まっていれば（登録済み／種別なし／フェーズなし）その場で開始＝2タップ
+  if(ph.length<=1){ startFrom(pi,ci,ph.length===1?0:-1); return; }
+  pickPhase(pi,ci);   // 未登録のPJだけ、従来どおり一覧から選ぶ
+}
+function pickPhase(pi,ci){
+  const p=S.projects[pi], pj=p?p.n:'', ph=phasesOf(p);
+  let h='<h3>フェーズを選ぶ</h3>';
+  h+='<div class="note" style="margin-top:0"><span class="gtag '+gClass(S.cats[ci].n)+'">'+gLabel(S.cats[ci].n)+'</span>'+esc(catShort(S.cats[ci].n))+' ／ '+esc(pj)+'</div>';
+  ph.forEach((x,j)=>h+='<button class="opt catopt k-ph" onclick="startFrom('+pi+','+ci+','+j+')">'+
+     '<span class="gtag big num">'+phaseNo(x)+'</span>'+
+     '<span class="cnm">'+esc(x)+'</span></button>');
+  h+='<button class="opt catopt k-none" onclick="startFrom('+pi+','+ci+',-1)">'+
+     '<span class="gtag big">－</span><span class="cnm">フェーズなし</span></button>';
+  h+='<button class="closebtn" onclick="pickPj('+ci+')">戻る</button>';
+  openSheet(h);
+}
+function startFrom(pi,ci,phi){
+  closeSheet();
+  const p=S.projects[pi]; if(!p) return;
+  const ph=(phi==null||phi<0)?'':(phasesOf(p)[phi]||'');
+  start(p.n,S.cats[ci].n,ph);
+}
+function start(pj,cat,phase){
   if(S.running){ if(!confirm('計測中の「'+S.running.cat+'」を終了して切り替えますか？')) return; stop(true); }
-  S.running={pj,cat,start:Date.now()};
+  S.running={pj,cat,phase:phase||'',start:Date.now()};
   _alerted=false;
   save();render();
   if(navigator.vibrate) navigator.vibrate(12);
@@ -1525,7 +1923,7 @@ function stop(silent){
   let newId=null;
   if(end-r.start>=30000){
     newId='e'+end+Math.random().toString(36).slice(2,6);
-    S.entries.push({id:newId,pj:r.pj,cat:r.cat,start:r.start,end,sent:false});
+    S.entries.push({id:newId,pj:r.pj,cat:r.cat,phase:phaseOf(r),start:r.start,end,sent:false});
   }else if(!silent){
     toast('30秒未満のため記録しません');
   }
@@ -1545,7 +1943,9 @@ function confirmSheet(id){
   let h='<h3>この内容で記録します</h3>';
   h+='<div class="confirm-card">'+
      '<div class="cc-pj">'+esc(e.pj)+'</div>'+
-     '<div class="cc-cat"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+esc(e.cat)+'</div>'+
+     '<div class="cc-cat"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+
+     '<span class="gtag '+gClass(e.cat)+'">'+gLabel(e.cat)+'</span>'+esc(catShort(e.cat))+'</div>'+
+     (phaseOf(e)?'<div class="cc-ph"><span class="phtag">'+esc(phaseOf(e))+'</span></div>':'')+
      '<div class="cc-time">'+hm(e.start)+' → '+hm(e.end)+' 　<b>'+hhmm(e.end-e.start)+'</b></div>'+
      '</div>';
   h+='<button class="closebtn done" style="margin-top:14px" onclick="sendFromConfirm(\''+id+'\')">Outlookへ送信 →</button>';
@@ -1561,35 +1961,60 @@ function sendFromConfirm(id){
   sendToCalendar([e]);
 }
 
+/* 実績カードの描画 */
+function renderEntries(box, list){
+  if(!box) return;
+  box.innerHTML='';
+  if(list.length===0){ box.innerHTML='<div class="empty">まだ記録がありません</div>'; return; }
+  list.forEach(e=>{
+    const c=catOf(e.cat);
+    const d=document.createElement('div');
+    d.className='entry'+(e.sent?' sent':'');
+    d.innerHTML=
+      '<span class="time">'+hm(e.start)+'→'+hm(e.end)+'</span>'+
+      '<span class="body"><span class="t1">'+esc(e.pj)+'</span>'+
+      '<span class="t2"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+
+      '<span class="gtag '+gClass(e.cat)+'">'+gLabel(e.cat)+'</span>'+esc(catShort(e.cat))+
+      (phaseOf(e)?'<span class="phtag">'+esc(phaseNoLabel(phaseOf(e)))+'</span>':'')+'</span></span>'+
+      '<span class="dur">'+hDec(e.end-e.start)+'</span>';
+    if(!e.sent){
+      const snd=document.createElement('button');
+      snd.className='rowbtn send';
+      snd.setAttribute('aria-label','この記録をOutlookへ追加');
+      snd.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>';
+      snd.onclick=(ev)=>{ev.stopPropagation();sendOne(e.id);};
+      d.appendChild(snd);
+    }else{
+      const mk=document.createElement('span');
+      mk.className='sentmark';mk.title='転送済';
+      mk.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>';
+      d.appendChild(mk);
+    }
+    const del=document.createElement('button');
+    del.className='rowbtn trash';del.setAttribute('aria-label','削除');
+    del.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6"></path></svg>';
+    del.onclick=(ev)=>{ ev.stopPropagation(); if(confirm('この記録を削除しますか？')){S.entries=S.entries.filter(x=>x.id!==e.id);save();render();} };
+    d.appendChild(del);
+    d.onclick=ev=>{ if(ev.target===d || (ev.target.closest && ev.target.closest('.body,.time,.dur'))) editEntry(e.id); };
+    box.appendChild(d);
+  });
+}
+
 /* ═══════ シート ═══════ */
 const sheet=document.getElementById('sheet'),sheetIn=document.getElementById('sheetIn');
-function openSheet(html){sheetIn.innerHTML='<div class="grip"></div>'+html;sheet.classList.add('on');}
-function closeSheet(){sheet.classList.remove('on');}
+function openSheet(html){sheetIn.dataset.view='';sheetIn.innerHTML='<div class="grip"></div>'+html;sheet.classList.add('on');}
+function closeSheet(){sheet.classList.remove('on');sheetIn.dataset.view='';}
 sheet.onclick=e=>{if(e.target===sheet)closeSheet();};
 
-function pickProject(){
-  let h='<h3>PJを選択</h3>';
-  S.projects.forEach((p,i)=>h+='<button class="opt" onclick="pickCat('+i+')">'+esc(p)+'</button>');
-  h+='<button class="closebtn" onclick="closeSheet()">キャンセル</button>';
-  openSheet(h);
-}
-function pickCat(pi){
-  const pj=S.projects[pi];
-  let h='<h3>'+esc(pj)+'</h3>';
-  S.cats.forEach((c,i)=>h+='<button class="opt" onclick="startFrom('+pi+','+i+')">'+esc(c.n)+
-    '<div class="sub"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span></div></button>');
-  h+='<button class="closebtn" onclick="pickProject()">戻る</button>';
-  openSheet(h);
-}
-function startFrom(pi,ci){closeSheet();start(S.projects[pi],S.cats[ci].n);}
 
 /* ═══════ 実績の編集 ═══════ */
 function editEntry(id,fromConfirm){
   const e=S.entries.find(x=>x.id===id);if(!e)return;
   const iso=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());};
   let h='<h3>記録を修正</h3>';
-  h+='<select id="ePj">'+S.projects.map(p=>'<option'+(p===e.pj?' selected':'')+'>'+esc(p)+'</option>').join('')+'</select>';
+  h+='<select id="ePj" onchange="onEditPjChange()">'+pjNames().map(n=>'<option'+(n===e.pj?' selected':'')+'>'+esc(n)+'</option>').join('')+'</select>';
   h+='<select id="eCat">'+S.cats.map(c=>'<option'+(c.n===e.cat?' selected':'')+'>'+esc(c.n)+'</option>').join('')+'</select>';
+  h+='<select id="ePh">'+phaseOptions(e.pj,phaseOf(e))+'</select>';
   h+='<div class="row2"><input type="datetime-local" id="eS" value="'+iso(e.start)+'"><input type="datetime-local" id="eE" value="'+iso(e.end)+'"></div>';
   if(e.sent) h+='<div class="note">この記録は転送済みです。修正すると未転送に戻り、再度カレンダーに追加できます（重複にご注意ください）。</div>';
   const backArg=fromConfirm?',true':'';
@@ -1604,9 +2029,26 @@ function saveEntry(id,fromConfirm){
   if(isNaN(s)||isNaN(en)||en<=s){toast('時刻が不正です');return;}
   e.pj=document.getElementById('ePj').value;
   e.cat=document.getElementById('eCat').value;
+  const _ph=document.getElementById('ePh');
+  e.phase=_ph?_ph.value:phaseOf(e);
   e.start=s;e.end=en;e.sent=false;
   save();render();toast('修正しました');
   if(fromConfirm){ confirmSheet(id); } else { closeSheet(); }
+}
+
+/* フェーズのセレクト。PJに無いフェーズが記録されている場合はその値も残す */
+function phaseOptions(pj,cur){
+  const ph=phasesOfName(pj);
+  let o='<option value="">（フェーズなし）</option>';
+  ph.forEach(p=>o+='<option value="'+esc(p)+'"'+(p===cur?' selected':'')+'>'+phaseNo(p)+'. '+esc(p)+'</option>');
+  if(cur&&ph.indexOf(cur)<0) o+='<option selected>'+esc(cur)+'</option>';
+  return o;
+}
+// PJを変えたらフェーズの候補も切り替える
+function onEditPjChange(){
+  const pj=document.getElementById('ePj').value;
+  const sel=document.getElementById('ePh');
+  if(sel) sel.innerHTML=phaseOptions(pj,'');
 }
 
 /* ═══════ カレンダー転送（.ics） ═══════ */
@@ -1620,18 +2062,20 @@ function fold(s){ // RFC5545 75オクテット折返し（簡易）
 }
 /* 予定の件名。先頭に選別キーワード #kosu を付与（Outlookエクスポート時に件名だけで抽出できる） */
 function subjectOf(e){
-  return '#kosu ['+e.pj+']['+e.cat+']';
+  const ph=phaseOf(e);
+  return '#kosu ['+e.pj+']['+e.cat+']'+(ph?'【'+ph+'】':'');
 }
 /* 分析用の機械可読タグ行。後でCSV/正規表現で確実に拾える形 */
 function tagLine(e){
   const c=catOf(e.cat);
   const min=Math.round((e.end-e.start)/60000);
-  return '#kosu PJ=['+e.pj+'] 分類=['+e.cat+'] 価値=['+VLABEL[c.v]+'] 分=['+min+']';
+  return '#kosu PJ=['+e.pj+'] 分類=['+e.cat+'] フェーズ=['+phaseOf(e)+'] 価値=['+VLABEL[c.v]+'] 分=['+min+']';
 }
 /* 人が読む本文（1行目）＋機械可読行（2行目） */
 function bodyLines(e){
   const c=catOf(e.cat);
-  return ['PJ: '+e.pj+' ／ 分類: '+e.cat+' ／ 価値区分: '+VLABEL[c.v]+' ／ 工数: '+hhmm(e.end-e.start),
+  const ph=phaseOf(e);
+  return ['PJ: '+e.pj+' ／ 分類: '+e.cat+(ph?' ／ フェーズ: '+ph:'')+' ／ 価値区分: '+VLABEL[c.v]+' ／ 工数: '+hhmm(e.end-e.start),
           tagLine(e)];
 }
 function buildIcs(list){
@@ -1755,6 +2199,29 @@ function downloadBlob(blob,name){
 function monthKey(t){const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1);}
 function csvCell(s){return '"'+String(s).replace(/"/g,'""')+'"';}
 
+/* その月に最も増えた投資（付加価値）活動。前月の記録がなければ、その月の最大の投資活動を返す */
+function topInvest(mk){
+  const p=mk.split('-').map(Number);
+  const prev=monthKey(new Date(p[0],p[1]-2,1).getTime());
+  const a=agg(monthlyEntries(mk)), pa=agg(monthlyEntries(prev));
+  const addCats=Object.keys(a.byCat).filter(c=>catOf(c).v==='add');
+  if(!addCats.length) return null;
+  if(pa.total>0){
+    let best=null,bd=0;
+    addCats.forEach(c=>{ const d=(a.byCat[c]-(pa.byCat[c]||0))/3600000; if(d>bd){bd=d;best=c;} });
+    if(best) return {name:best,grew:true,d:bd,h:a.byCat[best]/3600000};
+  }
+  const top=addCats.sort((x,y)=>a.byCat[y]-a.byCat[x])[0];
+  return {name:top,grew:false,d:0,h:a.byCat[top]/3600000};
+}
+function topInvestText(mk){
+  const t=topInvest(mk);
+  if(!t) return '';
+  return t.grew
+    ? '今月いちばん増えた投資活動：「'+t.name+'」 +'+fmtH(t.d)+'h（今月 '+fmtH(t.h)+'h）'
+    : '今月いちばん時間を使った投資活動：「'+t.name+'」 '+fmtH(t.h)+'h';
+}
+
 function monthlyEntries(mk){
   return S.entries.filter(e=>monthKey(e.start)===mk).sort((a,b)=>a.start-b.start);
 }
@@ -1795,6 +2262,8 @@ function exportMd(mk){
   md+='| 価値区分 | 工数 | 構成比 |\n|---|--:|--:|\n';
   ['add','keep','waste'].forEach(v=>{ md+='| '+VLABEL[v]+' | '+hhmm(byV[v])+' | '+pct(byV[v])+'% |\n'; });
   md+='\n**VH率（付加価値の割合）: '+pct(byV.add)+'%**\n\n';
+  const _ti=topInvestText(mk);
+  if(_ti) md+='> '+_ti+'\n\n';
 
   md+='## プロジェクト別\n\n| PJ | 工数 | 構成比 |\n|---|--:|--:|\n';
   sortDesc(byPj).forEach(p=>{ md+='| '+p+' | '+hhmm(byPj[p])+' | '+pct(byPj[p])+'% |\n'; });
@@ -1802,7 +2271,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.22.0 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.41.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
@@ -1840,7 +2309,8 @@ function monthOpen(){
          '<span style="color:var(--mute);font-family:var(--mono);flex:0 0 auto;margin-left:8px">'+hhmm(byPj[p])+' ・'+pct(byPj[p])+'%</span></div>'+
          '<div style="height:6px;background:var(--panel);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct(byPj[p])+'%;background:var(--amber)"></div></div></div>';
     });
-    h+='<div class="note">記録件数 '+list.length+'件。「何にどれだけ時間を使ったか」を PJ別・価値区分別で見られます。</div>';
+    const _ti=topInvestText(mk);
+    if(_ti) h+='<div class="fb">'+esc(_ti)+'</div>';
     h+='<button class="mini pri" style="width:100%;margin-top:12px;" onclick="openMatrixMonthly(\''+mk+'\')">月次マトリクスを表示</button>';
   }
 
@@ -1852,19 +2322,112 @@ function monthOpen(){
 function selMonth(m){S._selMonth=m;monthOpen();}
 document.getElementById('monthBtn').onclick=monthOpen;
 
+/* ═══════ バックアップ（書き出し／読み込み） ═══════
+   記録はURL（オリジン）ごとに保存されるため、配布先やURLが変わると引き継がれない。
+   JSONで丸ごと持ち出し・取り込みできるようにする */
+function exportBackup(){
+  const data={app:'kosu', appVer:'1.25.0', exportedAt:new Date().toISOString(), state:S};
+  downloadBlob(new Blob([JSON.stringify(data)],{type:'application/json'}),'kosu_backup_'+dkey(Date.now())+'.json');
+  toast('バックアップを書き出しました');
+}
+function pickBackup(mode){
+  const el=document.getElementById('bkFile');
+  if(!el) return;
+  el.dataset.mode=mode;
+  el.value='';
+  el.click();
+}
+function onBackupPicked(el){
+  const f=el.files&&el.files[0];
+  if(!f) return;
+  const mode=el.dataset.mode||'merge';
+  const r=new FileReader();
+  r.onload=()=>{
+    let d;
+    try{ d=JSON.parse(r.result); }catch(e){ toast('読み込めませんでした（JSONではありません）'); return; }
+    const st=d&&d.state?d.state:d;
+    if(!st||!Array.isArray(st.entries)){ toast('このアプリのバックアップではありません'); return; }
+    if(mode==='replace'){
+      if(!confirm('この端末の記録をすべて消して、バックアップの内容に置き換えます。よろしいですか？')) return;
+      S=JSON.parse(JSON.stringify(st));
+      if(!S.mtxSent) S.mtxSent={};
+      migProjects();
+      save(); render();
+      toast('復元しました（記録 '+S.entries.length+'件）');
+      closeSheet(); return;
+    }
+    // マージ：同じ記録は重複させず、PJ・業務分類は不足分だけ追加する
+    const key=e=>e.id||(e.pj+'|'+e.cat+'|'+e.start+'|'+e.end);
+    const have={}; S.entries.forEach(e=>have[key(e)]=1);
+    let add=0;
+    st.entries.forEach(e=>{ if(!have[key(e)]){ S.entries.push(e); have[key(e)]=1; add++; } });
+    S.entries.sort((a,b)=>a.start-b.start);
+    let addPj=0, addCat=0;
+    (st.projects||[]).forEach(x=>{
+      const n=(typeof x==='string')?x:((x&&x.n)||'');
+      if(!n) return;
+      const k=((typeof x==='object'&&x&&x.k)||(st.pjKind&&st.pjKind[n])||'');
+      const ph=(typeof x==='object'&&x&&Array.isArray(x.ph))?x.ph
+              :((st.pjPhases&&Array.isArray(st.pjPhases[n]))?st.pjPhases[n]:null);
+      const fav=(typeof x==='object'&&x&&!!x.fav)||(Array.isArray(st.favPj)&&st.favPj.indexOf(n)>=0);
+      const same=S.projects.filter(o=>o.n===n);
+      if(same.length===0){
+        const o={id:newPjId(), n:n};
+        if(kindDef(k)) o.k=k;
+        if(Array.isArray(ph)) o.ph=ph.slice();
+        if(fav) o.fav=true;
+        S.projects.push(o); addPj++;
+      }else{
+        const o=same[0];
+        if(!o.k&&kindDef(k)) o.k=k;
+        if(!Array.isArray(o.ph)&&Array.isArray(ph)) o.ph=ph.slice();
+        if(fav) o.fav=true;
+      }
+    });
+    (st.cats||[]).forEach(c=>{ if(!S.cats.some(x=>x.n===c.n)){ S.cats.push({n:c.n,v:c.v||'keep'}); addCat++; } });
+    if(st.mtxSent) Object.keys(st.mtxSent).forEach(k=>{ if(!S.mtxSent[k]) S.mtxSent[k]=st.mtxSent[k]; });
+    save(); render();
+    toast('取り込みました（記録 +'+add+'件／PJ +'+addPj+'／分類 +'+addCat+'）');
+    closeSheet();
+  };
+  r.readAsText(f);
+}
+
 /* ═══════ 設定 ═══════ */
 document.getElementById('cfgBtn').onclick=cfgOpen;
 function cfgOpen(){
   let h='<h3>設定</h3>';
 
-  h+='<h2 style="margin-top:4px">ストップ忘れ防止</h2>';
-  h+='<div class="note">計測がこの時間を超えると、警告を表示します（ストップ忘れ対策）。</div>';
+  h+='<h2 style="margin-top:4px">業務分類</h2>';
+  S.cats.forEach((c,i)=>{
+    h+='<div class="listrow card '+gClass(c.n)+'"><span class="gtag big">'+gLabel(c.n)+'</span><span class="nm big">'+esc(catShort(c.n))+'</span>'+
+       '<select onchange="setV('+i+',this.value)" style="width:auto;margin:0;padding:6px 8px;font-size:12px">'+
+       ['add','keep','waste'].map(v=>'<option value="'+v+'"'+(c.v===v?' selected':'')+'>'+VLABEL[v]+'</option>').join('')+
+       '</select><button class="mini dan" onclick="delCat('+i+')">削除</button></div>';
+  });
+  h+='<div class="row2"><input type="text" id="newCat" placeholder="業務分類を追加"><button class="mini pri" onclick="addCat()">追加</button></div>';
+  h+='<button class="mini" style="width:100%;margin-top:6px" onclick="resetCats()">業務分類を標準セット（13件）に入れ替える</button>';
+  h+='<h2 style="margin-top:16px">PJ一覧</h2>';
+  S.projects.forEach((p,i)=>{
+    const k=kindOf(p), f=isFavPj(p);
+    h+='<div class="listrow card k-pj"><button class="mini favbtn'+(f?' on':'')+'" onclick="togFavPjCfg('+i+')" aria-label="よく使うPJに固定">'+(f?'★':'☆')+'</button>'+
+       '<span class="gtag big" onclick="phaseView('+i+')" style="cursor:pointer">'+kindBadge(k)+'</span>'+
+       '<span class="nm big" onclick="phaseView('+i+')" style="cursor:pointer">'+esc(p.n)+
+       '<span class="pcount">'+esc(pjTagLabel(p))+'</span>'+'</span>'+
+       '<select onchange="setPjKind('+i+',this.value)" style="width:auto;margin:0;padding:6px 8px;font-size:12px">'+
+       '<option value=""'+(k?'':' selected')+'>未設定</option>'+
+       PJ_KINDS.map(x=>'<option value="'+x.k+'"'+(k===x.k?' selected':'')+'>'+x.n+'</option>').join('')+
+       '</select><button class="mini dan" onclick="delPj('+i+')">削除</button></div>';
+  });
+  h+='<div class="row2"><input type="text" id="newPj" placeholder="PJ名を追加"><button class="mini pri" onclick="addPj()">追加</button></div>';
+  h+='<button class="mini" style="width:100%;margin-top:6px" onclick="resetPjsCfg()">PJ一覧を標準（開発1〜3・生産・定常）に戻す</button>';
+
+  h+='<h2 style="margin-top:16px">ストップ忘れ防止</h2>';
   h+='<select id="alertSel" onchange="setAlert(this.value)">'+
      [30,45,60,90,120,180].map(v=>'<option value="'+v+'"'+(S.alertMin===v?' selected':'')+'>'+v+'分</option>').join('')+
      '</select>';
 
   h+='<h2 style="margin-top:14px">記録の目安</h2>';
-  h+='<div class="note">1日の所定労働時間は「記録カバー率」（その日どれだけ打刻できたか）の分母に使います。</div>';
   h+='<div class="row2"><select id="workSel" onchange="setWorkH(this.value)">'+
      [7,7.5,7.75,8,8.5,9].map(v=>'<option value="'+v+'"'+(S.workH===v?' selected':'')+'>'+v+'h／日</option>').join('')+
      '</select>'+
@@ -1874,25 +2437,14 @@ function cfgOpen(){
   h+='<div class="row2"><select id="wasteSel" onchange="setWasteTarget(this.value)">'+
      [0,5,10,15,20,30].map(v=>'<option value="'+v+'"'+(S.wasteTarget===v?' selected':'')+'>ムダ 上限'+v+'%</option>').join('')+
      '</select><span></span></div>';
-  h+='<div class="note">投資＝付加価値、現状維持＝維持管理。配分ページの「価値区分別」で目標との差が見られます。</div>';
 
-  h+='<h2>PJ一覧</h2>';
-  S.projects.forEach((p,i)=>{
-    h+='<div class="listrow"><span class="nm">'+esc(p)+'</span>'+
-       '<button class="mini dan" onclick="delPj('+i+')">削除</button></div>';
-  });
-  h+='<div class="row2"><input type="text" id="newPj" placeholder="PJ名を追加"><button class="mini pri" onclick="addPj()">追加</button></div>';
+  h+='<h2 style="margin-top:14px">データの引き継ぎ（バックアップ）</h2>';
+  h+='<button class="mini pri" style="width:100%" onclick="exportBackup()">バックアップを書き出す</button>';
+  h+='<div class="row2" style="margin-top:6px"><button class="mini" onclick="pickBackup(\'merge\')">読み込む（追加）</button>'+
+     '<button class="mini dan" onclick="pickBackup(\'replace\')">読み込む（置き換え）</button></div>';
+  h+='<input type="file" id="bkFile" accept="application/json,.json" style="display:none" onchange="onBackupPicked(this)">';
 
-  h+='<h2>業務分類</h2>';
-  S.cats.forEach((c,i)=>{
-    h+='<div class="listrow"><span class="nm">'+esc(c.n)+'</span>'+
-       '<select onchange="setV('+i+',this.value)" style="width:auto;margin:0;padding:6px 8px;font-size:12px">'+
-       ['add','keep','waste'].map(v=>'<option value="'+v+'"'+(c.v===v?' selected':'')+'>'+VLABEL[v]+'</option>').join('')+
-       '</select><button class="mini dan" onclick="delCat('+i+')">削除</button></div>';
-  });
-  h+='<div class="row2"><input type="text" id="newCat" placeholder="業務分類を追加"><button class="mini pri" onclick="addCat()">追加</button></div>';
 
-  h+='<div class="note">価値区分は分類ごとに固定されるため、打刻時の入力は不要です。付加価値時間の比率（VH率）が自動集計されます。</div>';
   h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
   openSheet(h);
 }
@@ -1900,7 +2452,100 @@ function setAlert(v){S.alertMin=parseInt(v,10)||60;_alerted=false;save();render(
 function setWorkH(v){S.workH=parseFloat(v)||8;save();cfgOpen();}
 function setVhTarget(v){S.vhTarget=parseInt(v,10)||50;save();cfgOpen();}
 function setWasteTarget(v){S.wasteTarget=parseInt(v,10);if(isNaN(S.wasteTarget))S.wasteTarget=10;save();cfgOpen();}
-function addPj(){const v=document.getElementById('newPj').value.trim();if(!v)return;S.projects.push(v);save();cfgOpen();render();}function delPj(i){if(S.projects.length<=1)return;S.projects.splice(i,1);save();cfgOpen();render();}
+function addPj(){
+  const v=document.getElementById('newPj').value.trim(); if(!v) return;
+  S.projects.push({id:newPjId(), n:v});   // 同じ名前でも別の行として追加できる
+  save();cfgOpen();render();
+}
+function delPj(i){
+  if(S.projects.length<=1)return;
+  S.projects.splice(i,1);   // 種別・付与・★はそのPJの行ごと消える
+  save();cfgOpen();render();
+}
+/* ── PJの種別とフェーズ（フェーズ名は種別ごとに固定。利用者は編集しない） ── */
+function setPjKind(pi,k){
+  const p=S.projects[pi]; if(!p) return;
+  if(k&&kindDef(k)) p.k=k; else delete p.k;
+  delete p.ph;   // 種別が変わったらフェーズの付与はやり直し（全部ON）
+  save(); cfgOpen(); render();
+}
+/* PJに使うフェーズを付与する（タップでON/OFF）。フェーズ名そのものは種別ごとに固定 */
+function phaseView(pi){
+  const p=S.projects[pi]; if(!p) return;
+  const k=kindOf(p), all=allPhasesOf(p), f=isFavPj(p), st=phaseState(p);
+  let h='<h3>'+esc(p.n)+' のフェーズ登録</h3>';
+  h+='<div class="reglabel" style="margin-top:0">種別：'+esc(kindName(k))+'</div>';
+  h+='<button class="closebtn'+(f?' done':'')+'" style="margin-top:0" onclick="togFavPjCfg('+pi+',true)">'+
+     (f?'★ よく使うPJに固定中（タップで解除）':'☆ よく使うPJに固定する')+'</button>';
+  if(all.length===0){
+    h+='<div class="empty">種別が未設定です（打刻は 業務分類 → PJ の2タップ）</div>';
+  }else if(st==='reg'){
+    h+='<div class="reglabel">登録中のフェーズ</div>';
+    h+='<div class="opt catopt k-ph reg"><span class="gtag big num on">'+phaseNo(regPhase(p))+'</span>'+
+       '<span class="cnm">'+esc(regPhase(p))+'</span></div>';
+    h+='<button class="closebtn" style="margin-top:10px" onclick="clearPjPhase('+pi+')">解除して選び直す</button>';
+  }else if(st==='none'){
+    h+='<div class="reglabel">フェーズを使わない設定です</div>';
+    h+='<button class="closebtn" style="margin-top:6px" onclick="clearPjPhase('+pi+')">解除して選び直す</button>';
+  }else{
+    h+='<div class="reglabel">登録するフェーズを選ぶ</div>';
+    all.forEach((x,j)=>h+='<button class="opt catopt k-ph'+(st==='multi'&&isPhaseOn(p,x)?' fav':'')+'" onclick="setPjPhase('+pi+','+j+')">'+
+      '<span class="gtag big num">'+phaseNo(x)+'</span><span class="cnm">'+esc(x)+'</span></button>');
+    h+='<button class="mini" style="width:100%;margin-top:8px" onclick="setPjNoPhase('+pi+')">このPJはフェーズを使わない</button>';
+  }
+  h+='<button class="closebtn" onclick="cfgOpen()">設定に戻る</button>';
+  openSheet(h);
+}
+/* 1つ登録する（ほかは自動的に外れる） */
+function setPjPhase(pi,j){
+  const p=S.projects[pi]; if(!p) return;
+  const x=allPhasesOf(p)[j]; if(!x) return;
+  p.ph=[x];
+  save(); render(); phaseView(pi);
+  toast('★ '+phaseNoLabel(x)+' を登録しました');
+}
+/* 解除＝未登録に戻す（打刻のたびに一覧から選ぶ状態） */
+function clearPjPhase(pi){
+  const p=S.projects[pi]; if(!p) return;
+  delete p.ph;
+  save(); render(); phaseView(pi);
+  toast('登録を解除しました');
+}
+function setPjNoPhase(pi){
+  const p=S.projects[pi]; if(!p) return;
+  p.ph=[];
+  save(); render(); phaseView(pi);
+  toast('このPJはフェーズを使いません');
+}
+/* PJ一覧を標準に戻す（v1.38.5）。記録は消えない */
+function resetPjs(){
+  if(!confirm('PJ一覧を標準の5件（開発1・開発2・開発3・生産・定常）に戻します。\n自分で登録したPJ名は一覧から消えますが、記録済みの工数は消えません。よろしいですか？')) return false;
+  S.projects=DEFAULT.projects.map(n=>{
+    const o={id:newPjId(), n:n};
+    const k=DEFAULT.pjKind[n];
+    if(kindDef(k)) o.k=k;
+    return o;
+  });
+  save(); render();
+  toast('PJ一覧を標準に戻しました');
+  return true;
+}
+function resetPjsHere(){ if(resetPjs()) pickCat(); }
+function resetPjsCfg(){ if(resetPjs()) cfgOpen(); }
+/* 打刻画面からそのまま入れ替える（v1.38.4） */
+function resetCatsHere(){
+  if(!confirm('業務分類を標準の13件に入れ替えます。\n自分で追加した分類は一覧から消えますが、記録済みの工数は消えません。よろしいですか？')) return;
+  S.cats=JSON.parse(JSON.stringify(DEFAULT.cats));
+  save(); render(); pickCat();
+  toast('業務分類を標準セットに入れ替えました');
+}
+/* 業務分類を標準セットに入れ替える（記録は消えない） */
+function resetCats(){
+  if(!confirm('業務分類を標準の13件に入れ替えます。\n自分で追加した分類は一覧から消えますが、記録済みの工数は消えません。よろしいですか？')) return;
+  S.cats=JSON.parse(JSON.stringify(DEFAULT.cats));
+  save(); cfgOpen(); render();
+  toast('業務分類を標準セットに入れ替えました');
+}
 function addCat(){const v=document.getElementById('newCat').value.trim();if(!v)return;S.cats.push({n:v,v:'keep'});save();cfgOpen();render();}
 function delCat(i){if(S.cats.length<=1)return;S.cats.splice(i,1);save();cfgOpen();render();}
 function setV(i,v){S.cats[i].v=v;save();cfgOpen();render();}
@@ -1908,6 +2553,7 @@ function setV(i,v){S.cats[i].v=v;save();cfgOpen();render();}
 // 起動時は必ず現在の期間を選択（前回選んだ日付・週・月は引き継がない）
 S.mtxKey=null;
 render();
+if(_migStdDone) setTimeout(()=>toast(_migStdDone+'を最新の標準セットに更新しました'),600);
 </script>
 </body>
 </html>
