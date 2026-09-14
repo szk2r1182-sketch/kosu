@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.41.1 (2026-09-13): 「PJを選ぶ」のフェーズタグを、バッジ（開／生／定）とPJ名と同じ高さ（30px・13px太字）に大きくした。位置は右詰めのまま。あわせて生産のフェーズを「1. 継続的改善活動」の1件だけにし、「改善の実施」を削除した（過去の記録に残る名前はそのまま）。
+  ver.1.42.2 (2026-09-14): 定常のフェーズ名を実務の呼び方に合わせた（1. 教育(研修、動画視聴) ／ 2. マネジメント(朝会、おしゃべり共有会、メール) ／ 3. 共有(担当mtg、TPM報告会、安担会議)）。以前の名前（育成計画の立案・実施／計画・進捗の管理／会議体の運営、およびv1.42.1の途中の名前）で登録していたPJとクイック打刻の★は、起動時に一度だけ新しい名前へ自動で読み替える。過去の記録に残る古い名前はそのままで、配分・出力にも出続ける。
 -->
 <style>
   :root{
@@ -623,7 +623,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.41.1</div>
+  <div class="ver">ver.1.42.2</div>
 </div>
 
 <div class="dock">
@@ -705,7 +705,7 @@ const PJ_KINDS=[
     '治工具計画立案・実施','設備計画立案・実施','工事管理','物流計画立案・実施','品質計画立案・実施',
     '工試・生試の準備・実施','移行判断','立ち上げ後確認(3か月)']},
   {k:'prod', n:'生産', phases:['継続的改善活動']},
-  {k:'std', n:'定常', phases:['育成計画の立案・実施','計画・進捗の管理','会議体の運営']}
+  {k:'std', n:'定常', phases:['教育(研修、動画視聴)','マネジメント(朝会、おしゃべり共有会、メール)','共有(担当mtg、TPM報告会、安担会議)']}
 ];
 /* ── PJは「同じ名前でも別物として扱える」よう、1件ずつ id を持つオブジェクトにした（v1.38.0）
    { id, n:名前, k:種別, ph:付与フェーズ（無ければ種別の全量）, fav:★ }                         ── */
@@ -800,6 +800,32 @@ if(!S.migStd139){
     _migStdDone=_migStdDone?'業務分類とPJ一覧':'PJ一覧';
   }
   S.migStd139=true;
+}
+
+/* ── 定常のフェーズ名の変更（v1.42.1 → v1.42.2）──
+   PJに登録済みのフェーズ名とクイック打刻の★キーだけを最新の名前に読み替える。1回だけ実行する。
+   記録（S.entries）は触らない＝過去の工数には当時の名前が残る。
+   v1.42.1の途中の名前からも引けるよう、古い名前を全部載せている。 */
+const PHASE_RENAME={
+  '育成計画の立案・実施'              :'教育(研修、動画視聴)',
+  '計画・進捗の管理'                  :'マネジメント(朝会、おしゃべり共有会、メール)',
+  'マネジメント(朝会、おしゃべり共有会)':'マネジメント(朝会、おしゃべり共有会、メール)',
+  '会議体の運営'                      :'共有(担当mtg、TPM報告会、安担会議)',
+  '会議(担当mtg、TPM報告会、安担会議)' :'共有(担当mtg、TPM報告会、安担会議)'
+};
+if(!S.migPh1422){
+  (S.projects||[]).forEach(p=>{
+    if(Array.isArray(p&&p.ph)) p.ph=p.ph.map(x=>PHASE_RENAME[x]||x);
+  });
+  (S.favs||[]).forEach((k,i)=>{
+    const kp=String(k).split(FSEP);
+    if(kp.length>=3 && PHASE_RENAME[kp[2]]){
+      kp[2]=PHASE_RENAME[kp[2]];
+      S.favs[i]=kp.join(FSEP);
+    }
+  });
+  delete S.migPh1421;
+  S.migPh1422=true;
 }
 delete S.dial; delete S.selCat;     // v1.30〜1.34 のダイヤル方式は廃止
 /* フェーズの通し番号（種別ごとの並び順）。表示だけに使い、記録には名前を入れる */
@@ -984,14 +1010,20 @@ function render(){
     sb.style.display='none';
   }
 
-  // クイックボタン（★お気に入り固定 → 頻度順 で最大9件）
+  // クイックボタン（★お気に入り固定 → 最近使った順 で最大9件）
+  //   ★は登録した順に先頭へ固定。残りの枠は「最後に打刻した時刻」の新しい順で埋め、
+  //   枠からあふれた古いものは自動的に消える（v1.42.0：以前は頻度順だった）
   const favs=(S.favs||[]).slice();
-  const freq={};
-  S.entries.slice(-80).forEach(e=>{const k=favKey(e.pj,e.cat,phaseOf(e));freq[k]=(freq[k]||0)+1;});
-  const byFreq=Object.keys(freq).filter(k=>favs.indexOf(k)<0).sort((a,b)=>freq[b]-freq[a]);
+  const lastUsed={};
+  S.entries.slice(-200).forEach(e=>{
+    const k=favKey(e.pj,e.cat,phaseOf(e));
+    const t=e.end||e.start||0;
+    if(!(k in lastUsed)||t>lastUsed[k]) lastUsed[k]=t;
+  });
+  const byRecent=Object.keys(lastUsed).filter(k=>favs.indexOf(k)<0).sort((a,b)=>lastUsed[b]-lastUsed[a]);
   // いまの一覧に無いPJ・業務分類（前のバージョンの名前）はボタンに出さない
   const _liveCat=n=>S.cats.some(c=>c.n===n), _livePj=n=>S.projects.some(x=>x.n===n);
-  let keys=favs.concat(byFreq).filter(k=>{
+  let keys=favs.concat(byRecent).filter(k=>{
     const kp=String(k).split(FSEP);
     return _livePj(kp[0]) && _liveCat(kp[1]);
   }).slice(0,9);
@@ -1270,7 +1302,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.41.1 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.42.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1661,7 +1693,7 @@ function matrixExportMd(){
   const sel=selInfo();
   const m=buildMatrix(sel.list, sel.mode, sel.caption, {pct:false});
   if(!m.hasData){ toast('この期間の記録がありません'); return; }
-  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.41.1 より出力_\n';
+  const md=matrixMdText(m, sel)+'\n---\n_工数タイムレコーダー ver.1.42.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -2271,7 +2303,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.41.1 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.42.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
