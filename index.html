@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.43.1 (2026-09-14): 記録しない短時間の下限を 30秒 → 10秒 に変更（10秒以上の打刻は記録される。10秒未満は「10秒未満のため記録しません」）。
+  ver.1.44.1 (2026-09-15): 「業務分類を選ぶ」の先頭に出ていた案内（この端末には前に使っていた設定が残っています／PJ一覧を標準に戻すボタン）を廃止した。実名のPJを登録するのが本来の運用で、標準の5件と違うのは正常な状態のため、毎回出る案内が邪魔なだけだった。設定（⚙）の「PJ一覧を標準（開発1〜3・生産・定常）に戻す」ボタンは残している。
 -->
 <style>
   :root{
@@ -648,7 +648,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.43.1</div>
+  <div class="ver">ver.1.44.1</div>
 </div>
 
 <div class="dock">
@@ -673,25 +673,30 @@ function save(){
   try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){mem=JSON.parse(JSON.stringify(S));}
 }
 
+/* ═══════ 業務分類（固定・13件／v1.44.0） ═══════
+   現場6・机上6・移動1。利用者は追加・削除・入れ替えができない（表記ゆれと集計崩れを防ぐため）。
+   価値区分も固定。変更するときはこの一覧を直す（＝アプリの改修）。                        */
+const CATS=[
+  {n:'現場対応(調査)',v:'add'},
+  {n:'現場対応(準備)',v:'add'},
+  {n:'現場対応(実行、立ち合い)',v:'add'},
+  {n:'現場対応(後片付け)',v:'add'},
+  {n:'現場対応(設備トラブル、ワークの品質)',v:'add'},
+  {n:'現場対応(製造支援)',v:'add'},
+  {n:'会議',v:'add'},
+  {n:'資料作成(準備)',v:'add'},
+  {n:'資料作成(検収・算入、報告書)',v:'add'},
+  {n:'管理・マネジメント',v:'keep'},
+  {n:'メール対応',v:'keep'},
+  {n:'トランスクリプト収集・議事録作成',v:'add'},
+  {n:'移動',v:'waste'}
+];
+
 /* ═══════ 初期データ ═══════ */
 const DEFAULT={
   projects:['開発1','開発2','開発3','生産','定常'],
   pjKind:{'開発1':'dev','開発2':'dev','開発3':'dev','生産':'prod','定常':'std'},
-  cats:[
-    {n:'現場対応(調査)',v:'add'},
-    {n:'現場対応(準備)',v:'add'},
-    {n:'現場対応(実行、立ち合い、後片付け)',v:'add'},
-    {n:'現場対応(後片付け)',v:'add'},
-    {n:'現場対応(設備トラブル、ワークの品質)',v:'add'},
-    {n:'現場対応(製造支援)',v:'add'},
-    {n:'会議',v:'add'},
-    {n:'資料作成(準備)',v:'add'},
-    {n:'資料作成(後片づけ)',v:'add'},
-    {n:'管理・マネジメント',v:'keep'},
-    {n:'メール対応',v:'keep'},
-    {n:'トランスクリプト収集・議事録作成',v:'add'},
-    {n:'移動',v:'waste'}
-  ],
+  cats:CATS,
   entries:[],
   running:null,
   mode:'ics',
@@ -699,6 +704,24 @@ const DEFAULT={
 };
 let S=load()||JSON.parse(JSON.stringify(DEFAULT));
 if(!S.projects) S=JSON.parse(JSON.stringify(DEFAULT));
+/* ── v1.44.0：業務分類の名称変更を1回だけ読み替える（記録・★の両方） ──
+   分類は「同じ行為の呼び方が変わっただけ」なので、過去の記録も新しい名前にそろえる
+   （フェーズの改称のときは記録を触らなかったが、分類は集計の軸なので名前を統一する）。 */
+const CAT_RENAME={
+  '現場対応(実行、立ち合い、後片付け)':'現場対応(実行、立ち合い)',
+  '資料作成(後片づけ)'                :'資料作成(検収・算入、報告書)',
+  '資料作成(後片付け)'                :'資料作成(検収・算入、報告書)'
+};
+if(!S.migCat144){
+  (S.entries||[]).forEach(e=>{ if(e&&CAT_RENAME[e.cat]) e.cat=CAT_RENAME[e.cat]; });
+  (S.favs||[]).forEach((k,i)=>{
+    const kp=String(k).split('\u0001');
+    if(kp.length>=2 && CAT_RENAME[kp[1]]){ kp[1]=CAT_RENAME[kp[1]]; S.favs[i]=kp.join('\u0001'); }
+  });
+  S.migCat144=true;
+}
+/* v1.44.0：業務分類は固定。端末に残っている分類（追加・削除・旧名）は毎回この一覧で上書きする */
+S.cats=JSON.parse(JSON.stringify(CATS));
 if(!S.mode) S.mode='outlook';
 S.mode='outlook'; // 転送はOutlook直リンクに固定（標準カレンダー方式は廃止）
 if(typeof S.alertMin!=='number') S.alertMin=60;
@@ -711,12 +734,6 @@ if(typeof S.vhTarget!=='number') S.vhTarget=50;     // 投資（付加価値）�
 if(typeof S.wasteTarget!=='number') S.wasteTarget=10; // ムダ割合の上限目標(%)
 // PJの種別（PJ名 → 'dev' | 'prod' | 'std'）。フェーズはこの種別から決まる
 if(!S.pjKind||typeof S.pjKind!=='object'||Array.isArray(S.pjKind)) S.pjKind={};
-// 改善活動は「将来の時間を生む活動」として付加価値（投資）に移行（1回だけ実施）
-if(!S.migKaizen){
-  const _k=(S.cats||[]).find(c=>c.n==='改善活動');
-  if(_k&&_k.v==='keep') _k.v='add';
-  S.migKaizen=true;
-}
 
 /* ── フェーズ ──────────────────────────────────────────
    打刻キーの区切り文字。v1.26.0 で「PJ|分類」→「PJ|分類|フェーズ」の3要素に変更した。
@@ -803,16 +820,10 @@ function favKey(pj,cat,phase){ return pj+FSEP+cat+FSEP+(phase||''); }
 if(!Array.isArray(S.favs)) S.favs=[];
 delete S.favPh;   // v1.36.0 のフェーズ単位★は廃止（v1.37.0）
 migProjects();    // v1.38.0：PJを {id,n,k,ph,fav} のオブジェクトへ（旧データからの移行を含む）
-/* ── v1.39.0：一度だけ、業務分類を最新の標準セット（13件）に合わせる ──
-   端末（URL）ごとに保存された前のバージョンの分類が残り、アプリを更新しても
-   古い一覧のままになる問題への対処。記録（S.entries）は触らないので工数は消えない。
-   PJ名は各自が実名を登録する運用のため自動では消さず、昔の仮名（プロジェクトA…）のときだけ入れ替える。 */
+/* ── v1.39.0：昔の仮名のPJ一覧（プロジェクトA…）だけ、一度だけ標準に入れ替える ──
+   業務分類は v1.44.0 で固定になったため、ここでは扱わない。記録（S.entries）は触らない。 */
 let _migStdDone='';
 if(!S.migStd139){
-  if(!catsAreStandard()){
-    S.cats=JSON.parse(JSON.stringify(DEFAULT.cats));
-    _migStdDone='業務分類';
-  }
   const _names=(S.projects||[]).map(x=>x&&x.n);
   const _isOldPlaceholder=_names.length>0 && _names.every(n=>/^プロジェクト/.test(String(n||'')));
   if(_isOldPlaceholder){
@@ -822,7 +833,7 @@ if(!S.migStd139){
       if(kindDef(k)) o.k=k;
       return o;
     });
-    _migStdDone=_migStdDone?'業務分類とPJ一覧':'PJ一覧';
+    _migStdDone='PJ一覧';
   }
   S.migStd139=true;
 }
@@ -868,16 +879,6 @@ function phaseNoLabel(phase){
 /* 業務分類の色分け：現場対応＝金色 / それ以外（机・移）＝銀色 */
 function isGenba(cat){ return String(cat||'').indexOf('現場対応')===0; }
 function gClass(cat){ return isGenba(cat)?'g-field':'g-desk'; }
-/* いまの業務分類が標準セット（13件）と同じかどうか。古い端末データの検知に使う */
-function catsAreStandard(){
-  const a=(S.cats||[]).map(c=>c.n), b=DEFAULT.cats.map(c=>c.n);
-  return a.length===b.length && a.every((n,i)=>n===b[i]);
-}
-/* いまのPJ一覧が標準（開発1〜3・生産・定常）と同じかどうか */
-function pjsAreStandard(){
-  const a=(S.projects||[]).map(p=>p&&p.n), b=DEFAULT.projects;
-  return a.length===b.length && a.every((n,i)=>n===b[i]);
-}
 /* 打刻の選択画面では「現場対応」の接頭辞をバッジ（現）が表すので、名前からは外して大きく見せる */
 function catShort(cat){
   const t=String(cat||'');
@@ -1455,7 +1456,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.43.1 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.44.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1818,7 +1819,7 @@ function matrixExportCsv(){
 function matrixExportMd(){
   const sel=selInfo(), t=buildTri(sel.list);
   if(!t.hasData){ toast('この期間の記録がありません'); return; }
-  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.43.1 より出力_\n';
+  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.44.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1949,16 +1950,8 @@ function favSort(items,isFav){
 /* ── 打刻の選択：業務分類 → PJ → フェーズ ── */
 function pickCat(){
   let h='<h3>業務分類を選ぶ</h3>';
-  // 端末に前の設定（業務分類・PJ）が残っていると昔の並びのままになる。その場で戻せるようにする
-  const _cOk=catsAreStandard(), _pOk=pjsAreStandard();
-  if(!_cOk||!_pOk){
-    h+='<div class="warn slim">この端末には<b>前に使っていた設定が残っています</b>。'+
-       (!_cOk?'<br>・業務分類が標準セット（13件）と違います':'')+
-       (!_pOk?'<br>・PJ一覧が標準（開発1〜3・生産・定常）と違います':'')+
-       (!_cOk?'<button class="mini" style="width:100%;margin-top:8px" onclick="resetCatsHere()">業務分類を標準セット（13件）に戻す</button>':'')+
-       (!_pOk?'<button class="mini" style="width:100%;margin-top:6px" onclick="resetPjsHere()">PJ一覧を標準（開発1〜3・生産・定常）に戻す</button>':'')+
-       '<div style="margin-top:6px;font-size:11px">戻しても、打刻済みの工数は消えません。自分で登録した名前を使い続けたいときは、このまま閉じてください。</div></div>';
-  }
+  // v1.44.1：「前に使っていた設定が残っています」の案内は廃止した。
+  // 実名PJを登録するのが本来の運用で、標準の5件と違うのは正常な状態だから。
   S.cats.forEach((c,i)=>{
     h+='<button class="opt catopt '+gClass(c.n)+'" onclick="pickPj('+i+')">'+
        '<span class="gtag big">'+gLabel(c.n)+'</span>'+
@@ -2382,7 +2375,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.43.1 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.44.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
@@ -2495,7 +2488,7 @@ function onBackupPicked(el){
         if(fav) o.fav=true;
       }
     });
-    (st.cats||[]).forEach(c=>{ if(!S.cats.some(x=>x.n===c.n)){ S.cats.push({n:c.n,v:c.v||'keep'}); addCat++; } });
+    // 業務分類は固定（v1.44.0）。バックアップに入っていても取り込まない
     if(st.mtxSent) Object.keys(st.mtxSent).forEach(k=>{ if(!S.mtxSent[k]) S.mtxSent[k]=st.mtxSent[k]; });
     save(); render();
     toast('取り込みました（記録 +'+add+'件／PJ +'+addPj+'／分類 +'+addCat+'）');
@@ -2509,15 +2502,11 @@ document.getElementById('cfgBtn').onclick=cfgOpen;
 function cfgOpen(){
   let h='<h3>設定</h3>';
 
-  h+='<h2 style="margin-top:4px">業務分類</h2>';
-  S.cats.forEach((c,i)=>{
+  h+='<h2 style="margin-top:4px">業務分類（13件・固定）</h2>';
+  S.cats.forEach(c=>{
     h+='<div class="listrow card '+gClass(c.n)+'"><span class="gtag big">'+gLabel(c.n)+'</span><span class="nm big">'+esc(catShort(c.n))+'</span>'+
-       '<select onchange="setV('+i+',this.value)" style="width:auto;margin:0;padding:6px 8px;font-size:12px">'+
-       ['add','keep','waste'].map(v=>'<option value="'+v+'"'+(c.v===v?' selected':'')+'>'+VLABEL[v]+'</option>').join('')+
-       '</select><button class="mini dan" onclick="delCat('+i+')">削除</button></div>';
+       '<span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span></div>';
   });
-  h+='<div class="row2"><input type="text" id="newCat" placeholder="業務分類を追加"><button class="mini pri" onclick="addCat()">追加</button></div>';
-  h+='<button class="mini" style="width:100%;margin-top:6px" onclick="resetCats()">業務分類を標準セット（13件）に入れ替える</button>';
   h+='<h2 style="margin-top:16px">PJ一覧</h2>';
   S.projects.forEach((p,i)=>{
     const k=kindOf(p), f=isFavPj(p);
@@ -2641,25 +2630,7 @@ function resetPjs(){
   toast('PJ一覧を標準に戻しました');
   return true;
 }
-function resetPjsHere(){ if(resetPjs()) pickCat(); }
 function resetPjsCfg(){ if(resetPjs()) cfgOpen(); }
-/* 打刻画面からそのまま入れ替える（v1.38.4） */
-function resetCatsHere(){
-  if(!confirm('業務分類を標準の13件に入れ替えます。\n自分で追加した分類は一覧から消えますが、記録済みの工数は消えません。よろしいですか？')) return;
-  S.cats=JSON.parse(JSON.stringify(DEFAULT.cats));
-  save(); render(); pickCat();
-  toast('業務分類を標準セットに入れ替えました');
-}
-/* 業務分類を標準セットに入れ替える（記録は消えない） */
-function resetCats(){
-  if(!confirm('業務分類を標準の13件に入れ替えます。\n自分で追加した分類は一覧から消えますが、記録済みの工数は消えません。よろしいですか？')) return;
-  S.cats=JSON.parse(JSON.stringify(DEFAULT.cats));
-  save(); cfgOpen(); render();
-  toast('業務分類を標準セットに入れ替えました');
-}
-function addCat(){const v=document.getElementById('newCat').value.trim();if(!v)return;S.cats.push({n:v,v:'keep'});save();cfgOpen();render();}
-function delCat(i){if(S.cats.length<=1)return;S.cats.splice(i,1);save();cfgOpen();render();}
-function setV(i,v){S.cats[i].v=v;save();cfgOpen();render();}
 
 // 起動時は必ず現在の期間を選択（前回選んだ日付・週・月は引き継がない）
 S.mtxKey=null;
