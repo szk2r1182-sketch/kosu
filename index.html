@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.44.1 (2026-09-15): 「業務分類を選ぶ」の先頭に出ていた案内（この端末には前に使っていた設定が残っています／PJ一覧を標準に戻すボタン）を廃止した。実名のPJを登録するのが本来の運用で、標準の5件と違うのは正常な状態のため、毎回出る案内が邪魔なだけだった。設定（⚙）の「PJ一覧を標準（開発1〜3・生産・定常）に戻す」ボタンは残している。
+  ver.1.44.2 (2026-09-15): クイック打刻の★が5件ほどで「固定は最大9件までです」と出て登録できなくなる不具合を修正。★のキーに残っていた「いまの一覧に無いPJ・業務分類」（PJ名の変更・削除や、v1.44.0の業務分類の改称で残ったもの）がボタンに出ないまま9件の枠を消費していたため、起動時と★の切替時に掃除するようにした。トーストに現在の件数（n/9件）も出す。
 -->
 <style>
   :root{
@@ -648,7 +648,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.44.1</div>
+  <div class="ver">ver.1.44.2</div>
 </div>
 
 <div class="dock">
@@ -864,6 +864,25 @@ if(!S.migPh1422){
   S.migPh1422=true;
 }
 delete S.dial; delete S.selCat;     // v1.30〜1.34 のダイヤル方式は廃止
+/* ── v1.44.2：クイック打刻の★（S.favs）の掃除 ────────────────────────────
+   ★のキーは「PJ名｜業務分類｜フェーズ」の文字列で持っている。PJ名を変えた・消した、
+   業務分類の名前が変わった（v1.44.0）などで、いまの一覧に無いキーが残ると
+   ボタンには出ないのに枠（最大9件）だけを食いつぶし、「固定は最大9件までです」で
+   新しい★が登録できなくなる。起動時と★の切替時に、出せないキーと重複を捨てる。   */
+function favKeyLive(k){
+  const kp=String(k).split(FSEP);
+  return kp.length>=2 && S.projects.some(x=>x&&x.n===kp[0]) && S.cats.some(c=>c.n===kp[1]);
+}
+function pruneFavs(){
+  if(!Array.isArray(S.favs)) { S.favs=[]; return 0; }
+  const before=S.favs.length, seen={};
+  S.favs=S.favs.filter(k=>{
+    if(!favKeyLive(k)||seen[k]) return false;
+    seen[k]=1; return true;
+  });
+  return before-S.favs.length;
+}
+const _favDropped=pruneFavs();
 /* フェーズの通し番号（種別ごとの並び順）。表示だけに使い、記録には名前を入れる */
 function phaseNo(phase){
   for(let i=0;i<PJ_KINDS.length;i++){
@@ -1456,7 +1475,7 @@ function matrixMonthlyMdText(m, mk){
 function matrixMonthlyExportMd(mk){
   const m=buildMatrix(monthlyEntries(mk), 'month');
   if(!m.hasData){ toast('この月の記録がありません'); return; }
-  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.44.1 より出力_\n';
+  const md=matrixMonthlyMdText(m, mk)+'\n---\n_工数タイムレコーダー ver.1.44.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+mk+'.md');
   toast(mk+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1819,7 +1838,7 @@ function matrixExportCsv(){
 function matrixExportMd(){
   const sel=selInfo(), t=buildTri(sel.list);
   if(!t.hasData){ toast('この期間の記録がありません'); return; }
-  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.44.1 より出力_\n';
+  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.44.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1912,8 +1931,9 @@ function toggleFav(k){
   const i=S.favs.indexOf(k);
   if(i>=0){ S.favs.splice(i,1); toast('固定を解除しました'); }
   else{
-    if(S.favs.length>=9){ toast('固定は最大9件までです'); return; }
-    S.favs.push(k); toast('★ 固定しました');
+    pruneFavs();   // 出せないキーが枠を食っていることがあるので、数える前に掃除する
+    if(S.favs.length>=9){ toast('固定は最大9件までです（いま'+S.favs.length+'件）。ほかの★を外してください'); return; }
+    S.favs.push(k); toast('★ 固定しました（'+S.favs.length+'/9件）');
   }
   save();render();
 }
@@ -2375,7 +2395,7 @@ function exportMd(mk){
   md+='\n## 業務分類別\n\n| 分類 | 価値区分 | 工数 | 構成比 |\n|---|---|--:|--:|\n';
   sortDesc(byCat).forEach(c=>{ md+='| '+c+' | '+VLABEL[catOf(c).v]+' | '+hhmm(byCat[c])+' | '+pct(byCat[c])+'% |\n'; });
 
-  md+='\n---\n_工数タイムレコーダー ver.1.44.1 より出力_\n';
+  md+='\n---\n_工数タイムレコーダー ver.1.44.2 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_analysis_'+mk+'.md');
   toast(mk+' の分析Markdownを書き出しました');
 }
@@ -2636,6 +2656,7 @@ function resetPjsCfg(){ if(resetPjs()) cfgOpen(); }
 S.mtxKey=null;
 render();
 if(_migStdDone) setTimeout(()=>toast(_migStdDone+'を最新の標準セットに更新しました'),600);
+if(_favDropped>0){ save(); setTimeout(()=>toast('クイック打刻の★から、いまの一覧に無い'+_favDropped+'件を外しました'),1000); }
 </script>
 </body>
 </html>
