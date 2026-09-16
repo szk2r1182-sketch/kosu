@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.47.0 (2026-09-16): 工数マトリクスのページ並びを「配分／グラフ／表／サマリー」、配分のタブを「業務分類別／PJ別／フェーズ別／価値区分別」に変更。グラフの積み上げと凡例を価値区分から業務分類に変更（色は配分ページと共通）。「月次分析・出力」ページを廃止（工数マトリクスの月次と重複するため）し、ドックは設定ボタンだけにした。Outlook／CSV／MDの出力ボタンと未送信の案内を、どのページでも表示するよう一つ上の階層へ移動（案内は日次／週次／月次の上）。あわせて日次マトリクスをOutlookへ送っても「送信済」にならない不具合を修正。
+  ver.1.47.1 (2026-09-16): 工数マトリクス「グラフ」の凡例を、配分ページと同じ行形式（色・価値区分・名前・今回・前回・差）にして大きくした。凡例をタップすると、その業務分類の棒だけを強調する（期間を切り替えても強調は残る）。配分ページの強調も同じ仕組みにそろえ、選んだ項目に白い枠を付けて見分けやすくした。
 -->
 <style>
   :root{
@@ -349,6 +349,7 @@
   .trendwrap{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 6px 6px;}
   .trendwrap svg{display:block;}
   .legend{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 6px 2px;}
+  .trendwrap + .slg{margin-top:10px;}
   .lg{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--mute);}
   .lg i{width:9px;height:9px;border-radius:2px;display:inline-block;}
   .lgnote{margin-left:auto;font-size:10px;color:#5A6673;}
@@ -449,7 +450,12 @@
   .stb .sg:first-child{border-radius:4px 0 0 4px;}
   .stb .sg:last-of-type{border-radius:0 4px 4px 0;box-shadow:none;}
   .stb .sg i{font-style:normal;font-size:11px;font-weight:700;color:#12161B;font-family:var(--mono);}
-  .stb .sg.dim{opacity:.18;}
+  .stb .sg.dim{opacity:.15;}
+  .stb .sg.hi{box-shadow:inset 0 0 0 2px #FFFFFF;}
+  .trendwrap .tc{transition:opacity .12s;}
+  .trendwrap .tc.dim{opacity:.12;}
+  .trendwrap .tc.hi{opacity:1;stroke:#FFFFFF;stroke-width:1.5;}
+  .sl:focus-visible{outline:2px solid var(--amber);}
   .stb.none{align-items:center;justify-content:center;}
   .stb.none em{font-style:normal;font-size:11px;color:var(--mute);}
   .gm{position:absolute;top:-4px;bottom:-4px;width:0;border-left:2px dashed #FFFFFF;pointer-events:none;}
@@ -665,7 +671,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.47.0</div>
+  <div class="ver">ver.1.47.1</div>
 </div>
 
 <div class="dock">
@@ -1458,7 +1464,7 @@ function triMdText(t, sel){
 
 
 // マトリクスを全画面（シート）で開く
-function setMtxMode(mode){ S.mtxMode=mode; S.mtxKey=null; save(); openMatrix(); render(); }
+function setMtxMode(mode){ _hlName=null; S.mtxMode=mode; S.mtxKey=null; save(); openMatrix(); render(); }
 function setMtxKey(k){ S.mtxKey=k; save(); openMatrix(); render(); }
 function toggleMtxPct(){ S.mtxPct=(S.mtxPct===false); save(); openMatrix(); }
 
@@ -1493,7 +1499,7 @@ function trendChart(mode,selKey){
     if(tot>0){
       order.forEach(c=>{   // 下から設定の並び順に積む
         const hh=((d.g.byCat[c]||0)/3600000)/maxH*BH;
-        if(hh>0.4){ y-=hh; g+='<rect x="'+x+'" y="'+y.toFixed(1)+'" width="'+BW+'" height="'+hh.toFixed(1)+'" fill="'+catColor(c)+'" opacity="'+(on?1:.62)+'"><title>'+esc(c)+' '+fmtH(d.g.byCat[c]/3600000)+'h</title></rect>'; }
+        if(hh>0.4){ y-=hh; g+='<rect class="tc" data-hi="'+order.indexOf(c)+'" x="'+x+'" y="'+y.toFixed(1)+'" width="'+BW+'" height="'+hh.toFixed(1)+'" fill="'+catColor(c)+'" opacity="'+(on?1:.62)+'"><title>'+esc(c)+' '+fmtH(d.g.byCat[c]/3600000)+'h</title></rect>'; }
       });
       g+='<text x="'+(x+BW/2)+'" y="'+(y-4).toFixed(1)+'" text-anchor="middle" font-size="13" fill="'+(on?'#FFB020':'#7D8894')+'">'+fmtH(tot)+'</text>';
     }else{
@@ -1508,9 +1514,17 @@ function trendChart(mode,selKey){
   });
   return '<div class="trendwrap"><svg viewBox="0 0 '+(n*CW)+' '+H+'" width="100%" style="height:auto;max-height:320px" preserveAspectRatio="xMidYMid meet">'+
          '<line x1="0" y1="'+BASE+'" x2="'+(n*CW)+'" y2="'+BASE+'" stroke="#2E3944" stroke-width="1"/>'+g+'</svg>'+
-         '<div class="legend">'+order.slice().reverse().map(c=>'<span class="lg"><i style="background:'+catColor(c)+'"></i>'+esc(c)+'</span>').join('')+
-         (order.length?'':'<span class="lg">記録なし</span>')+
-         '<span class="lgnote">棒をタップで期間切替</span></div></div>';
+         '<div class="legend"><span class="lgnote">棒をタップで期間切替 ／ 凡例をタップで強調</span></div></div>'+
+         chartLegend(mode,selKey,order);
+}
+/* グラフの凡例：選択中の期間（今回）と、その前の期間を並べる */
+function chartLegend(mode,selKey,order){
+  if(!order.length) return '<div class="empty">まだ記録がありません</div>';
+  const a=agg(periodEntries(mode,selKey)), pk=prevPeriodKey(mode,selKey);
+  const P=pk?agg(periodEntries(mode,pk)):null;
+  _hlNames=order.slice();
+  const items=order.map(c=>({name:c,cur:a.byCat[c]||0,prev:P?(P.byCat[c]||0):0,v:catOf(c).v,color:catColor(c)}));
+  return legendRows(items,a.total,P?P.total:0,PREV_SHORT[mode],true);
 }
 
 /* 価値区分の内訳バー（今回／前回を上下に並べて比較） */
@@ -1560,7 +1574,7 @@ function feedbackText(mode,a,pa){
   return out.join('　／　');
 }
 
-function setMtxView(v){ S.mtxView=v; save(); openMatrix(); }
+function setMtxView(v){ _hlName=null; S.mtxView=v; save(); openMatrix(); }
 function stepPeriod(d){
   const sel=selInfo(), k=shiftKey(sel.mode,sel.key,d);
   if(d>0&&!validKey(sel.mode,k)) return;
@@ -1627,15 +1641,40 @@ function viewTable(sel,t,showPct,capSuffix,prevCat){
 
 /* ページ4：配分（100%積み上げ帯で今回と前回を比べる） v1.46.0 */
 const PIE_COLORS=['#F28E2B','#4E79A7','#59A14F','#E15759','#76B7B2','#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC','#86BCB6','#D4A6C8','#8CD17D'];
-function setMtxPie(k){ S.mtxPie=k; save(); openMatrix(); }
+function setMtxPie(k){ _hlName=null; S.mtxPie=k; save(); openMatrix(); }
 const VAL_NAME={add:'投資',keep:'現状維持',waste:'ムダ'};
 const VAL_COLOR={add:'#3FB68B',keep:'#6E9CD2',waste:'#C97A9E'};
 /* 凡例・帯をタップすると、その項目以外を薄くする */
-let _stkSel=-1;
-function stkPick(i){
-  _stkSel=(_stkSel===i)?-1:i;
-  document.querySelectorAll('.stk2 .sg').forEach(el=>el.classList.toggle('dim',_stkSel>=0&&el.getAttribute('data-i')!=String(_stkSel)));
-  document.querySelectorAll('.slg .sl').forEach(el=>el.classList.toggle('on',el.getAttribute('data-i')==String(_stkSel)));
+let _hlName=null, _hlNames=[];
+function hlPick(i){
+  const n=_hlNames[i];
+  _hlName=(n==null||_hlName===n)?null:n;
+  applyHl();
+}
+function applyHl(){
+  const i=_hlName==null?-1:_hlNames.indexOf(_hlName);
+  document.querySelectorAll('[data-hi]').forEach(el=>{
+    const m=el.getAttribute('data-hi')===String(i);
+    el.classList.toggle('dim',i>=0&&!m);
+    el.classList.toggle('hi',i>=0&&m);
+  });
+  document.querySelectorAll('.slg .sl').forEach(el=>el.classList.toggle('on',i>=0&&el.getAttribute('data-i')===String(i)));
+}
+/* 凡例（今回・前回・差）。配分ページとグラフページで共通 */
+function legendRows(items,curTotal,prevTotal,prevLabel,showV){
+  const hasP=prevTotal>0;
+  let h='<div class="slg"><div class="slh"><span></span><span>今回</span><span>'+prevLabel+'</span><span>差</span></div>';
+  items.forEach((it,i)=>{
+    const cp=pctOf(it.cur,curTotal), pp=hasP?pctOf(it.prev,prevTotal):null;
+    h+='<div class="sl'+(it.cur>0?'':' gone')+'" data-i="'+i+'" role="button" tabindex="0" onclick="hlPick('+i+')">'+
+       '<span class="sn"><span class="lc" style="background:'+it.color+'"></span>'+
+         (showV&&it.v?'<span class="lv vtag '+VCLASS[it.v]+'">'+VLABEL[it.v].slice(0,2)+'</span>':'')+
+         '<span class="snm">'+esc(it.name)+'</span></span>'+
+       '<span class="sv"><b>'+cp+'%</b><small>'+fmtH(it.cur/3600000)+'h</small></span>'+
+       '<span class="sv pv2"><b>'+(pp==null?'－':pp+'%')+'</b><small>'+(hasP?fmtH(it.prev/3600000)+'h':'')+'</small></span>'+
+       '<span class="sd">'+(hasP?diffPt(cp,pp):'')+'</span></div>';
+  });
+  return h+'</div>';
 }
 /* 100%積み上げの帯1本 */
 function stkBar(label,sub,items,key,total,marks){
@@ -1644,7 +1683,7 @@ function stkBar(label,sub,items,key,total,marks){
     items.forEach((it,i)=>{
       const ms=it[key]; if(!(ms>0)) return;
       const w=ms/total*100, pc=Math.round(w);
-      seg+='<span class="sg" data-i="'+i+'" onclick="stkPick('+i+')" style="width:'+w.toFixed(2)+'%;background:'+it.color+'" title="'+esc(it.name)+' '+pc+'%">'+
+      seg+='<span class="sg" data-hi="'+i+'" onclick="hlPick('+i+')" style="width:'+w.toFixed(2)+'%;background:'+it.color+'" title="'+esc(it.name)+' '+pc+'%">'+
            (w>=11?'<i>'+pc+'%</i>':'')+'</span>';
     });
   }
@@ -1709,7 +1748,6 @@ function breakdownKpis(kind,a,P,label){
 
 function viewBreakdown(sel,a,pa){
   const kind=['cat','pj','phase','val'].indexOf(S.mtxPie)>=0?S.mtxPie:'cat';
-  _stkSel=-1;
   let h='<div class="seg sub q4">'+[['cat','業務分類別'],['pj','PJ別'],['phase','フェーズ別'],['val','価値区分別']].map(k=>
      '<button class="segbtn'+(kind===k[0]?' on':'')+'" onclick="setMtxPie(\''+k[0]+'\')">'+k[1]+'</button>').join('')+'</div>';
   const P=(pa&&pa.total>0)?pa:null;
@@ -1751,18 +1789,8 @@ function viewBreakdown(sel,a,pa){
      '<div class="stax"><span class="stl"></span><span class="stt">'+[0,20,40,60,80,100].map(v=>'<i style="left:'+v+'%">'+v+'%</i>').join('')+'</span></div>'+
      '</div>';
   // 凡例（今回・前回・差）
-  h+='<div class="slg"><div class="slh"><span></span><span>今回</span><span>'+PREV_SHORT[sel.mode]+'</span><span>差</span></div>';
-  items.forEach((it,i)=>{
-    const cp=pctOf(it.cur,a.total), pp=P?pctOf(it.prev,P.total):null;
-    h+='<div class="sl'+(it.cur>0?'':' gone')+'" data-i="'+i+'" onclick="stkPick('+i+')">'+
-       '<span class="sn"><span class="lc" style="background:'+it.color+'"></span>'+
-         (it.v&&kind!=='val'?'<span class="lv vtag '+VCLASS[it.v]+'">'+VLABEL[it.v].slice(0,2)+'</span>':'')+
-         '<span class="snm">'+esc(it.name)+'</span></span>'+
-       '<span class="sv"><b>'+cp+'%</b><small>'+fmtH(it.cur/3600000)+'h</small></span>'+
-       '<span class="sv pv2"><b>'+(pp==null?'－':pp+'%')+'</b><small>'+(P?fmtH(it.prev/3600000)+'h':'')+'</small></span>'+
-       '<span class="sd">'+(P?diffPt(cp,pp):'')+'</span></div>';
-  });
-  h+='</div>';
+  _hlNames=items.map(it=>it.name);
+  h+=legendRows(items,a.total,P?P.total:0,PREV_SHORT[sel.mode],kind!=='val');
   return h;
 }
 
@@ -1813,6 +1841,7 @@ function openMatrix(){
 
   h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
   openSheet(h);
+  applyHl();
 }
 
 /* ── 今日のマトリクスを Outlook（終日予定）／CSV／MDへ ── */
@@ -1842,7 +1871,7 @@ function matrixExportCsv(){
 function matrixExportMd(){
   const sel=selInfo(), t=buildTri(sel.list);
   if(!t.hasData){ toast('この期間の記録がありません'); return; }
-  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.47.0 より出力_\n';
+  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.47.1 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
