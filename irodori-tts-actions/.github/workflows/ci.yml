@@ -1,0 +1,47 @@
+name: 検証
+
+# モデルを落とさずに済む軽いチェックだけを行う。実際の合成は tts.yml / tts-batch.yml。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: スクリプトとジョブ定義の検証
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: PyYAML を入れる
+        run: pip install --quiet pyyaml
+
+      - name: 構文チェック
+        run: python -m compileall -q scripts
+
+      - name: build_spec.py の動作確認
+        env:
+          TTS_TEXT: こんにちは。\nテストです。
+          TTS_NAME: ci-check
+          TTS_FORMATS: wav,mp3
+          TTS_SPEC_OUT: /tmp/job.json
+        run: |
+          python scripts/build_spec.py
+          python scripts/synthesize.py --spec /tmp/job.json --voices-dir voices --dry-run
+
+      - name: 同梱のジョブ定義を検証
+        run: |
+          for spec in jobs/*.yaml jobs/*.yml jobs/*.json; do
+            [ -e "$spec" ] || continue
+            echo "== $spec"
+            python scripts/synthesize.py --spec "$spec" --voices-dir voices --dry-run
+          done

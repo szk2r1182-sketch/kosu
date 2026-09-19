@@ -1,0 +1,133 @@
+name: 音声生成（単発）
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: 読み上げるテキスト（改行は \n と書く）
+        required: true
+        type: string
+      voice:
+        description: 参照音声（voices/ 配下のファイル名。カンマ区切りで複数可。空なら参照なし）
+        required: false
+        default: ""
+        type: string
+      caption:
+        description: 声の説明（VoiceDesign 対応チェックポイントのみ有効）
+        required: false
+        default: ""
+        type: string
+      name:
+        description: 出力ファイル名（拡張子なし）
+        required: false
+        default: speech
+        type: string
+      formats:
+        description: 出力形式
+        required: false
+        default: wav,mp3
+        type: choice
+        options:
+          - wav
+          - mp3
+          - wav,mp3
+      checkpoint:
+        description: Hugging Face のチェックポイント
+        required: false
+        default: Aratako/Irodori-TTS-v4.1-Small-MF
+        type: string
+      num_steps:
+        description: サンプリングステップ数（空ならチェックポイントの既定値）
+        required: false
+        default: ""
+        type: string
+      seed:
+        description: 乱数シード（空ならランダム。同じ声を再現したいときに指定する）
+        required: false
+        default: ""
+        type: string
+      upstream_ref:
+        description: Irodori-TTS のブランチ／タグ／コミット SHA
+        required: false
+        default: main
+        type: string
+      release:
+        description: 生成した音声を Release にも添付する
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthesize:
+    name: 合成
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v5
+
+      - name: ジョブ定義を作成
+        env:
+          TTS_TEXT: ${{ inputs.text }}
+          TTS_VOICE: ${{ inputs.voice }}
+          TTS_CAPTION: ${{ inputs.caption }}
+          TTS_NAME: ${{ inputs.name }}
+          TTS_FORMATS: ${{ inputs.formats }}
+          TTS_CHECKPOINT: ${{ inputs.checkpoint }}
+          TTS_NUM_STEPS: ${{ inputs.num_steps }}
+          TTS_SEED: ${{ inputs.seed }}
+          TTS_SPEC_OUT: job.json
+        run: python3 scripts/build_spec.py
+
+      - name: Irodori-TTS を準備
+        id: setup
+        uses: ./.github/actions/setup-irodori
+        with:
+          upstream-ref: ${{ inputs.upstream_ref }}
+          cache-key: ${{ inputs.checkpoint }}
+
+      - name: 音声を生成
+        run: |
+          "${{ steps.setup.outputs.python }}" scripts/synthesize.py \
+            --spec job.json \
+            --outdir outputs \
+            --voices-dir voices
+
+      - name: 成果物をアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-${{ github.run_number }}
+          path: outputs/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Release に添付
+    needs: synthesize
+    if: ${{ inputs.release }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 成果物をダウンロード
+        uses: actions/download-artifact@v4
+        with:
+          name: audio-${{ github.run_number }}
+          path: outputs
+
+      - name: Release を作成
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="audio-${{ github.run_number }}"
+          gh release create "$tag" outputs/* \
+            --title "$tag" \
+            --notes "ワークフロー実行 #${{ github.run_number }} で生成した音声。"

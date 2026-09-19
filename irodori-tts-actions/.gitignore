@@ -1,0 +1,19 @@
+# Irodori-TTS 本体は実行のたびに取得する
+vendor/
+
+# 生成物
+outputs/
+job.json
+*.wav
+*.mp3
+*.flac
+!voices/*.wav
+!voices/*.flac
+!voices/*.mp3
+!voices/*.m4a
+!voices/*.ogg
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/

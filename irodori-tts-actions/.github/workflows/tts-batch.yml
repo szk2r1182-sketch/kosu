@@ -1,0 +1,91 @@
+name: 音声生成（一括）
+
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: ジョブ定義ファイル（.yaml / .yml / .json）
+        required: false
+        default: jobs/example.yaml
+        type: string
+      upstream_ref:
+        description: Irodori-TTS のブランチ／タグ／コミット SHA
+        required: false
+        default: main
+        type: string
+      release:
+        description: 生成した音声を Release にも添付する
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tts-batch-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthesize:
+    name: 一括合成
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v5
+
+      - name: Irodori-TTS を準備
+        id: setup
+        uses: ./.github/actions/setup-irodori
+        with:
+          upstream-ref: ${{ inputs.upstream_ref }}
+          cache-key: batch
+
+      - name: ジョブ定義を検証
+        env:
+          TTS_SPEC: ${{ inputs.spec }}
+        run: |
+          "${{ steps.setup.outputs.python }}" scripts/synthesize.py \
+            --spec "$TTS_SPEC" --voices-dir voices --dry-run
+
+      - name: 音声を生成
+        env:
+          TTS_SPEC: ${{ inputs.spec }}
+        run: |
+          "${{ steps.setup.outputs.python }}" scripts/synthesize.py \
+            --spec "$TTS_SPEC" \
+            --outdir outputs \
+            --voices-dir voices
+
+      - name: 成果物をアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-batch-${{ github.run_number }}
+          path: outputs/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Release に添付
+    needs: synthesize
+    if: ${{ inputs.release }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 成果物をダウンロード
+        uses: actions/download-artifact@v4
+        with:
+          name: audio-batch-${{ github.run_number }}
+          path: outputs
+
+      - name: Release を作成
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="audio-batch-${{ github.run_number }}"
+          gh release create "$tag" outputs/* \
+            --title "$tag" \
+            --notes "ワークフロー実行 #${{ github.run_number }} で一括生成した音声。"

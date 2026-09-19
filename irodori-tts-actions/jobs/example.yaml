@@ -1,0 +1,31 @@
+# 一括生成のサンプル。「音声生成（一括）」ワークフローから spec に指定して使う。
+#
+# defaults は全項目の既定値、items が実際に生成する 1 件ずつの指定。
+# items 側で同じキーを書くと、その項目だけ上書きされる。
+
+defaults:
+  # MeanFlow 蒸留版。サンプリング 4 ステップで済むので CPU ランナー向き。
+  # 品質優先なら Aratako/Irodori-TTS-v4.1-Small（既定 40 ステップ）に変える。
+  checkpoint: Aratako/Irodori-TTS-v4.1-Small-MF
+  # voices/ にファイルを置いてから、拡張子なしのファイル名をここに書くと声を複製できる。
+  # null のままだと参照音声なし（話者はシードごとにランダム）。
+  voice: null
+  formats: [wav, mp3]
+  max_chars: 120 # 1 回の合成に渡す最大文字数。超える分は文の切れ目で分割して連結する。
+  gap_ms: 300 # 分割したチャンクの間に入れる無音（ミリ秒）
+
+items:
+  - id: greeting
+    text: |
+      おはようございます。今日も一日よろしくお願いします。
+    seed: 20260919 # シードを固定すると同じ声・同じ読み方を再現できる
+
+  - id: emoji-style
+    # 絵文字で話し方や感情を指示できるのが Irodori-TTS の特徴。
+    text: |
+      😊 わあ、うまくいきましたね。 😮 えっ、もう終わったんですか？
+    seed: 7
+
+  - id: from-file
+    text_file: ../texts/sample.txt
+    max_chars: 100

@@ -1,0 +1,74 @@
+name: Setup Irodori-TTS
+description: Irodori-TTS をクローンして依存関係を入れ、推論に使う Python を返す。
+
+inputs:
+  upstream-repo:
+    description: クローンする Irodori-TTS のリポジトリ
+    required: false
+    default: Aratako/Irodori-TTS
+  upstream-ref:
+    description: クローンするブランチ・タグ・コミット（再現性が要るならコミット SHA を指定する）
+    required: false
+    default: main
+  backend:
+    description: PyTorch のバックエンド（cpu / cu128 / rocm / xpu）
+    required: false
+    default: cpu
+  dest:
+    description: クローン先ディレクトリ
+    required: false
+    default: vendor/Irodori-TTS
+  cache-key:
+    description: Hugging Face のモデルキャッシュを分けるためのキー（通常はチェックポイント名）
+    required: false
+    default: default
+
+outputs:
+  python:
+    description: Irodori-TTS の依存が入った Python のパス
+    value: ${{ steps.venv.outputs.python }}
+  project-dir:
+    description: Irodori-TTS をクローンしたディレクトリ
+    value: ${{ inputs.dest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Irodori-TTS を取得
+      uses: actions/checkout@v5
+      with:
+        repository: ${{ inputs.upstream-repo }}
+        ref: ${{ inputs.upstream-ref }}
+        path: ${{ inputs.dest }}
+
+    - name: uv をセットアップ
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        cache-dependency-glob: ${{ inputs.dest }}/uv.lock
+
+    - name: モデルキャッシュを復元
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/huggingface
+        key: hf-${{ runner.os }}-${{ inputs.cache-key }}-${{ inputs.upstream-ref }}
+        restore-keys: |
+          hf-${{ runner.os }}-${{ inputs.cache-key }}-
+          hf-${{ runner.os }}-
+
+    - name: 依存関係をインストール
+      shell: bash
+      working-directory: ${{ inputs.dest }}
+      run: uv sync --extra "${{ inputs.backend }}"
+
+    - name: Python のパスを確定
+      id: venv
+      shell: bash
+      run: |
+        python_path="$(cd "${{ inputs.dest }}" && pwd)/.venv/bin/python"
+        if [ ! -x "$python_path" ]; then
+          echo "::error::仮想環境の Python が見つからない: $python_path"
+          exit 1
+        fi
+        echo "python=$python_path" >> "$GITHUB_OUTPUT"
+        "$python_path" -c 'import torch; print("torch", torch.__version__)'
