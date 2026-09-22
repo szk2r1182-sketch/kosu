@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.48.0 (2026-09-17): 工数マトリクスの「サマリー」ページを廃止し（配分の価値区分別と重複）、「スケジュール」ページを追加。日付 ＞ 業務分類 ＞ PJ の行に、打刻した時間帯を業務分類の色の帯で並べるガント表示。週次・月次は日付ごとに表示し、日付のボタンで表示する日を絞れる。凡例は配分・グラフと同じ形で、凡例や帯をタップすると同じ業務分類だけを強調する。
+  ver.1.51.0 (2026-09-23): Outlookの件名を角かっこ［］だけの7項目・固定順に統一。#kosu [PJ][業務分類][フェーズ][種別][場所][価値区分][フェーズNo]。フェーズは【】をやめて［］にし、フェーズが無いときも [] を残して位置をそろえる。v1.50.0で足した大分類は業務分類と重なるため削除。タグ行も同じ項目に合わせた。
 -->
 <style>
   :root{
@@ -697,7 +697,7 @@
   <div id="entries"></div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
 
-  <div class="ver">ver.1.48.0</div>
+  <div class="ver">ver.1.51.0</div>
 </div>
 
 <div class="dock">
@@ -1893,7 +1893,7 @@ function matrixExportCsv(){
 function matrixExportMd(){
   const sel=selInfo(), t=buildTri(sel.list);
   if(!t.hasData){ toast('この期間の記録がありません'); return; }
-  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.48.0 より出力_\n';
+  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.51.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -2192,21 +2192,47 @@ function fold(s){ // RFC5545 75オクテット折返し（簡易）
   return s.length<=74?s:s.match(/.{1,74}/g).join('\r\n ');
 }
 /* 予定の件名。先頭に選別キーワード #kosu を付与（Outlookエクスポート時に件名だけで抽出できる） */
-function subjectOf(e){
+/* v1.51.0：件名は角かっこ［］だけで7項目を固定の順に並べる（フェーズが無い日も [] を残して位置をずらさない）
+   #kosu [PJ][業務分類][フェーズ][種別][場所][価値区分][フェーズNo]
+   種別・場所・価値区分・フェーズNo は既存の項目から自動で決まるラベル（入力も組み合わせも増えない）。
+   種別     … フェーズから（無ければPJの種別）。開発／生産／定常／未設定
+   場所     … 業務分類から。現場／机上／移動
+   価値区分 … 業務分類から。付加価値／維持管理／ムダ
+   フェーズNo … フェーズの通し番号を2桁で（01〜12、フェーズなしは 00）。Tableauで工程順に並べる用 */
+function entryKind(e){
   const ph=phaseOf(e);
-  return '#kosu ['+e.pj+']['+e.cat+']'+(ph?'【'+ph+'】':'');
+  if(ph){
+    const nm=PHASE_RENAME[ph]||ph;
+    const d=PJ_KINDS.find(x=>x.phases.indexOf(nm)>=0);
+    if(d) return d.n;
+  }
+  const p=(S.projects||[]).find(x=>x&&x.n===e.pj&&kindDef(x.k));
+  return p?kindName(p.k):'未設定';
+}
+function entryPlace(e){
+  const g=gLabel(e.cat);
+  return g==='現'?'現場':g==='移'?'移動':'机上';
+}
+function entryValue(e){ return VLABEL[catOf(e.cat).v]; }
+function entryPhaseNo(e){
+  const ph=phaseOf(e);
+  const n=ph?phaseNo(PHASE_RENAME[ph]||ph):0;
+  return (n<10?'0':'')+n;
+}
+function subjectOf(e){
+  return '#kosu ['+e.pj+']['+e.cat+']['+phaseOf(e)+']['+entryKind(e)+']['+entryPlace(e)+']['+entryValue(e)+']['+entryPhaseNo(e)+']';
 }
 /* 分析用の機械可読タグ行。後でCSV/正規表現で確実に拾える形 */
 function tagLine(e){
   const c=catOf(e.cat);
   const min=Math.round((e.end-e.start)/60000);
-  return '#kosu PJ=['+e.pj+'] 分類=['+e.cat+'] フェーズ=['+phaseOf(e)+'] 価値=['+VLABEL[c.v]+'] 分=['+min+']';
+  return '#kosu PJ=['+e.pj+'] 分類=['+e.cat+'] フェーズ=['+phaseOf(e)+'] 種別=['+entryKind(e)+'] 場所=['+entryPlace(e)+'] 価値=['+VLABEL[c.v]+'] フェーズNo=['+entryPhaseNo(e)+'] 分=['+min+']';
 }
 /* 人が読む本文（1行目）＋機械可読行（2行目） */
 function bodyLines(e){
   const c=catOf(e.cat);
   const ph=phaseOf(e);
-  return ['PJ: '+e.pj+' ／ 分類: '+e.cat+(ph?' ／ フェーズ: '+ph:'')+' ／ 価値区分: '+VLABEL[c.v]+' ／ 工数: '+hhmm(e.end-e.start),
+  return ['PJ: '+e.pj+' ／ 分類: '+e.cat+(ph?' ／ フェーズ: '+ph:'')+' ／ 種別: '+entryKind(e)+' ／ 場所: '+entryPlace(e)+' ／ 価値区分: '+VLABEL[c.v]+' ／ 工数: '+hhmm(e.end-e.start),
           tagLine(e)];
 }
 function buildIcs(list){
