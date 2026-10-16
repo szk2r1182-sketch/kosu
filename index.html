@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.54.0 (2026-10-15): 設定（⚙）の業務分類から「追加」と「削除」を廃止した（名前の変更・価値区分の変更・標準セットへの入れ替えは残す）。バックアップの読み込み（追加）でも業務分類は増やさない。〔v1.53.0の内容〕Outlookが立ち上がらないときだけ予備シート（Outlookで開く／リンクをコピー／未送信に戻す）を出す。
+  ver.1.55.0 (2026-10-17): 設定（⚙）の業務分類で名前の変更をできなくした（名前は表示のみ）。業務分類で利用者が変えられるのは価値区分と「標準セット（13件）に入れ替える」だけ。〔v1.54.0の内容〕業務分類の追加・削除を廃止。〔v1.53.0の内容〕Outlookが立ち上がらないときだけ予備シート（Outlookで開く／リンクをコピー／未送信に戻す）を出す。
 -->
 <style>
   :root{
@@ -746,7 +746,7 @@
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
   </div><!-- /colR -->
 
-  <div class="ver">ver.1.54.0</div>
+  <div class="ver">ver.1.55.0</div>
 </div>
 
 <div class="dock">
@@ -772,7 +772,7 @@ function save(){
 
 /* ═══════ 業務分類（標準セット13件） ═══════
    現場6・机上6・移動1。v1.44.0〜1.51.0 は固定だったが、v1.52.0 で設定から
-   追加・名前の変更・価値区分の変更・削除ができるように戻した。標準セットへの入れ替えも可。 */
+   編集できるように戻したが、v1.54.0で追加・削除、v1.55.0で名前の変更を廃止。価値区分の変更と標準セットへの入れ替えのみ可。 */
 const CATS=[
   {n:'現場対応(調査)',v:'add'},
   {n:'現場対応(準備)',v:'add'},
@@ -1956,7 +1956,7 @@ function matrixExportCsv(){
 function matrixExportMd(){
   const sel=selInfo(), t=buildTri(sel.list);
   if(!t.hasData){ toast('この期間の記録がありません'); return; }
-  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.54.0 より出力_\n';
+  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.55.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -2564,10 +2564,10 @@ function cfgOpen(){
      '</select>';
 
   h+='<h2 style="margin-top:14px">業務分類</h2>';
-  h+='<div class="note" style="margin-top:0">名前をタップで変更（過去の記録と★も新しい名前にそろえます）。業務分類の追加・削除はできません。</div>';
+  h+='<div class="note" style="margin-top:0">業務分類の名前の変更・追加・削除はできません。価値区分だけ変えられます。</div>';
   S.cats.forEach((c,i)=>{
     h+='<div class="listrow card '+gClass(c.n)+'"><span class="gtag big">'+gLabel(c.n)+'</span>'+
-       '<span class="nm big edit" onclick="renCat('+i+')" title="名前を変更">'+esc(catShort(c.n))+'</span>'+
+       '<span class="nm big">'+esc(catShort(c.n))+'</span>'+
        '<select onchange="setV('+i+',this.value)" style="width:auto;margin:0;padding:6px 8px;font-size:12px">'+
        ['add','keep','waste'].map(v=>'<option value="'+v+'"'+(c.v===v?' selected':'')+'>'+VLABEL[v]+'</option>').join('')+
        '</select></div>';
@@ -2616,20 +2616,7 @@ function cfgOpen(){
 }
 /* ── 業務分類の編集（v1.52.0で復活） ── */
 function catExists(n,skip){ return S.cats.some((c,j)=>j!==skip&&c.n===n); }
-/* v1.54.0：業務分類の追加・削除は廃止（名前の変更・価値区分の変更・標準セットへの入れ替えのみ） */
-function renCat(i){
-  const c=S.cats[i]; if(!c) return;
-  const v=(prompt('業務分類の新しい名前',c.n)||'').trim();
-  if(!v||v===c.n) return;
-  if(catExists(v,i)){ toast('同じ名前の業務分類があります'); return; }
-  const n=(S.entries||[]).filter(e=>e&&e.cat===c.n).length;
-  if(n&&!confirm('「'+c.n+'」→「'+v+'」に変更します。\nこの分類の記録 '+n+'件も新しい名前にそろえます（Outlookへ送信済みの予定は変わりません）。よろしいですか？')) return;
-  const old=c.n; c.n=v;
-  (S.entries||[]).forEach(e=>{ if(e&&e.cat===old) e.cat=v; });
-  if(S.running&&S.running.cat===old) S.running.cat=v;
-  (S.favs||[]).forEach((k,j)=>{ const kp=String(k).split(FSEP); if(kp.length>=2&&kp[1]===old){ kp[1]=v; S.favs[j]=kp.join(FSEP); } });
-  save(); cfgOpen(); render(); toast('名前を変更しました');
-}
+/* v1.54.0：業務分類の追加・削除は廃止／v1.55.0：名前の変更も廃止（価値区分の変更・標準セットへの入れ替えのみ） */
 function setV(i,v){ if(!S.cats[i]) return; S.cats[i].v=v; save(); cfgOpen(); render(); }
 function resetCats(){
   if(!confirm('業務分類を標準の13件に入れ替えます。\n自分で追加・変更した分類は一覧から消えますが、記録済みの工数は消えません。よろしいですか？')) return;
