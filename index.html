@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#12161B">
 <title>工数タイムレコーダー</title>
 <!--
-  ver.1.51.0 (2026-09-23): Outlookの件名を角かっこ［］だけの7項目・固定順に統一。#kosu [PJ][業務分類][フェーズ][種別][場所][価値区分][フェーズNo]。フェーズは【】をやめて［］にし、フェーズが無いときも [] を残して位置をそろえる。v1.50.0で足した大分類は業務分類と重なるため削除。タグ行も同じ項目に合わせた。
+  ver.1.54.0 (2026-10-15): 設定（⚙）の業務分類から「追加」と「削除」を廃止した（名前の変更・価値区分の変更・標準セットへの入れ替えは残す）。バックアップの読み込み（追加）でも業務分類は増やさない。〔v1.53.0の内容〕Outlookが立ち上がらないときだけ予備シート（Outlookで開く／リンクをコピー／未送信に戻す）を出す。
 -->
 <style>
   :root{
@@ -668,6 +668,46 @@
   }
   .warn b{color:#FF9A9D;}
   :focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
+  /* 日時入力のカレンダーアイコンをアンバーで大きく（暗い背景で見つけやすく／v1.52.1） */
+  input[type=datetime-local]{color-scheme:dark;cursor:pointer;}
+  input[type=datetime-local]::-webkit-calendar-picker-indicator{
+    width:22px;height:22px;padding:4px;border-radius:6px;cursor:pointer;opacity:1;
+    background-color:rgba(255,176,32,.18);
+    filter:invert(72%) sepia(70%) saturate(1300%) hue-rotate(358deg) brightness(103%);
+  }
+
+  /* ══ PC表示（v1.52.0）：html.pc のときだけ効く ══ */
+  .sheet-in{position:relative;}
+  .sheet-x{display:flex;position:sticky;top:-8px;float:right;margin:-6px -6px 0 8px;z-index:2;
+    width:36px;height:36px;align-items:center;justify-content:center;border-radius:9px;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--txt);font-size:18px;cursor:pointer;}
+  html.pc body{font-size:15px;}
+  html.pc .wrap{max-width:1180px;padding:20px 24px 24px;
+    display:grid;grid-template-columns:minmax(360px,440px) minmax(0,1fr);column-gap:24px;align-items:start;}
+  html.pc .colL{position:sticky;top:16px;}
+  html.pc .wrap>#warn,html.pc .wrap>.ver{grid-column:1 / -1;}
+  html.pc .colR>h2:first-child{margin-top:0;}
+  html.pc .quick{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+  html.pc .dock-inner{max-width:1180px;justify-content:flex-end;}
+  html.pc .dock{padding:8px 24px;}
+  html.pc .dockbtn{flex:0 0 220px;padding:12px;}
+  html.pc body{padding-bottom:72px;}
+  html.pc .qbtn,html.pc .opt,html.pc .mini,html.pc .closebtn,html.pc .dockbtn,html.pc .mtxbtn{cursor:pointer;}
+  html.pc .qbtn:hover,html.pc .opt:hover,html.pc .dockbtn:hover{background:var(--panel-2);}
+  /* シート → 中央のウィンドウ */
+  html.pc .sheet{align-items:center;justify-content:center;padding:24px;}
+  html.pc .sheet-in{position:relative;max-width:760px;max-height:88vh;border:1px solid var(--line);
+    border-radius:16px;padding:20px 24px 24px;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  html.pc .sheet-in.wide{max-width:1120px;}
+  html.pc .sheet-in .grip{display:none;}
+  html.pc .sheet-x{display:flex;position:sticky;top:-8px;float:right;margin:-6px -10px 0 8px;z-index:2;
+    width:36px;height:36px;align-items:center;justify-content:center;border-radius:9px;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--txt);font-size:18px;cursor:pointer;}
+  html.pc .sheet-x:hover{background:#2B343E;}
+  html.pc .toast{bottom:84px;}
+  /* 業務分類の編集（設定） */
+  .listrow .nm.edit{cursor:pointer;}
+  .listrow .nm.edit::after{content:" ✎";font-size:12px;color:var(--mute);font-weight:400;}
 </style>
 </head>
 <body>
@@ -675,6 +715,7 @@
 
   <div id="warn"></div>
 
+  <div class="colL">
   <div class="head">
     <div class="clockrow">
       <span class="clock" id="clock">--:--:--</span>
@@ -693,11 +734,19 @@
   <h2>クイック打刻</h2>
   <div class="quick" id="quick"></div>
 
+  </div><!-- /colL -->
+
+  <div class="colR">
   <h2>今日の実績</h2>
   <div id="entries"></div>
+  <div id="pastBox" style="display:none">
+    <h2 id="pastHead">未送信の記録（前日以前）</h2>
+    <div id="pastEntries"></div>
+  </div>
   <button class="mtxbtn" id="mtxBtn" onclick="openMatrix()">🔳　工数マトリクス（PC入力用）を開く</button>
+  </div><!-- /colR -->
 
-  <div class="ver">ver.1.51.0</div>
+  <div class="ver">ver.1.54.0</div>
 </div>
 
 <div class="dock">
@@ -721,9 +770,9 @@ function save(){
   try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){mem=JSON.parse(JSON.stringify(S));}
 }
 
-/* ═══════ 業務分類（固定・13件／v1.44.0） ═══════
-   現場6・机上6・移動1。利用者は追加・削除・入れ替えができない（表記ゆれと集計崩れを防ぐため）。
-   価値区分も固定。変更するときはこの一覧を直す（＝アプリの改修）。                        */
+/* ═══════ 業務分類（標準セット13件） ═══════
+   現場6・机上6・移動1。v1.44.0〜1.51.0 は固定だったが、v1.52.0 で設定から
+   追加・名前の変更・価値区分の変更・削除ができるように戻した。標準セットへの入れ替えも可。 */
 const CATS=[
   {n:'現場対応(調査)',v:'add'},
   {n:'現場対応(準備)',v:'add'},
@@ -768,8 +817,10 @@ if(!S.migCat144){
   });
   S.migCat144=true;
 }
-/* v1.44.0：業務分類は固定。端末に残っている分類（追加・削除・旧名）は毎回この一覧で上書きする */
-S.cats=JSON.parse(JSON.stringify(CATS));
+/* v1.52.0：業務分類は利用者が編集できる。無いときだけ標準セットを入れる */
+if(!Array.isArray(S.cats)||!S.cats.length) S.cats=JSON.parse(JSON.stringify(CATS));
+S.cats=S.cats.filter(c=>c&&c.n).map(c=>({n:String(c.n),v:(['add','keep','waste'].indexOf(c.v)>=0?c.v:'keep')}));
+if(['auto','pc','sp'].indexOf(S.view)<0) S.view='auto';
 if(!S.mode) S.mode='outlook';
 S.mode='outlook'; // 転送はOutlook直リンクに固定（標準カレンダー方式は廃止）
 if(typeof S.alertMin!=='number') S.alertMin=60;
@@ -1146,6 +1197,11 @@ function render(){
   // 今日の実績
   const list=todayEntries();
   renderEntries(document.getElementById('entries'), list);
+  const pl=pastUnsentEntries(), pb=document.getElementById('pastBox');
+  if(pb){
+    pb.style.display=pl.length?'':'none';
+    if(pl.length){ document.getElementById('pastHead').textContent='未送信の記録（前日以前・'+pl.length+'件）'; renderEntries(document.getElementById('pastEntries'), pl); }
+  }
 
   // マトリクスは別ページ（openMatrix）で表示。ボタンに当日合計を表示
   const mtxBtn=document.getElementById('mtxBtn');
@@ -1163,6 +1219,13 @@ function render(){
 }
 
 // 当日の実績（新しい順）
+/* 今日以外の記録は日付を添える（v1.52.0） */
+function dPrefix(t){ if(dkey(t)===dkey(Date.now())) return ''; const d=new Date(t); return (d.getMonth()+1)+'/'+d.getDate()+'('+WD[d.getDay()]+') '; }
+/* 未送信の過去の記録（前日以前・直近31日）。日付を変えた記録もここから送れる */
+function pastUnsentEntries(){
+  const t=dkey(Date.now()), lim=Date.now()-31*86400000;
+  return S.entries.filter(e=>!e.sent && e.start>=lim && dkey(e.start)<t).sort((a,b)=>b.start-a.start);
+}
 function todayEntries(){
   const t=dkey(Date.now());
   return S.entries.filter(e=>dkey(e.start)===t).sort((a,b)=>b.start-a.start);
@@ -1862,7 +1925,7 @@ function openMatrix(){
   h+=sendRow(sel,t.hasData);
 
   h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
-  openSheet(h);
+  openSheet(h,true);
   applyHl();
 }
 
@@ -1893,7 +1956,7 @@ function matrixExportCsv(){
 function matrixExportMd(){
   const sel=selInfo(), t=buildTri(sel.list);
   if(!t.hasData){ toast('この期間の記録がありません'); return; }
-  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.51.0 より出力_\n';
+  const md=triMdText(t, sel)+'\n---\n_工数タイムレコーダー ver.1.54.0 より出力_\n';
   downloadBlob(new Blob([md],{type:'text/markdown;charset=utf-8'}),'kosu_matrix_'+sel.fileKey+'.md');
   toast(sel.title+' のマトリクスをMarkdownで書き出しました');
 }
@@ -1924,8 +1987,9 @@ function matrixSendOutlook(){
   const sel=selInfo(), t=buildTri(sel.list);
   if(!t.hasData){ toast('この期間の記録がありません'); return; }
   withOutlookSendLock(()=>{
-    openOutlookUrl(matrixOutlookUrl(t, sel));
-    if(sel.mode==='day'){ markDaySent(sel.key); openMatrix(); render(); }
+    const dk=sel.mode==='day'?sel.key:null;
+    openOutlookUrl(matrixOutlookUrl(t, sel), dk?()=>{ if(S.mtxSent) delete S.mtxSent[dk]; save(); render(); }:null);
+    if(dk){ markDaySent(dk); openMatrix(); render(); }
   });
 }
 
@@ -2077,7 +2141,7 @@ function confirmSheet(id){
      '<div class="cc-cat"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+
      '<span class="gtag '+gClass(e.cat)+'">'+gLabel(e.cat)+'</span>'+esc(catShort(e.cat))+'</div>'+
      (phaseOf(e)?'<div class="cc-ph"><span class="phtag">'+esc(phaseOf(e))+'</span></div>':'')+
-     '<div class="cc-time">'+hm(e.start)+' → '+hm(e.end)+' 　<b>'+hhmm(e.end-e.start)+'</b></div>'+
+     '<div class="cc-time">'+(dPrefix(e.start)?'<span style="color:var(--amber)">'+dPrefix(e.start)+'</span>':'')+hm(e.start)+' → '+hm(e.end)+' 　<b>'+hhmm(e.end-e.start)+'</b></div>'+
      '</div>';
   h+='<button class="closebtn done" style="margin-top:14px" onclick="sendFromConfirm(\''+id+'\')">Outlookへ送信 →</button>';
   h+='<div class="row2" style="margin-top:8px">'+
@@ -2102,7 +2166,7 @@ function renderEntries(box, list){
     const d=document.createElement('div');
     d.className='entry'+(e.sent?' sent':'');
     d.innerHTML=
-      '<span class="time">'+hm(e.start)+'→'+hm(e.end)+'</span>'+
+      '<span class="time">'+(dPrefix(e.start)?'<small style="display:block;color:var(--amber)">'+dPrefix(e.start)+'</small>':'')+hm(e.start)+'→'+hm(e.end)+'</span>'+
       '<span class="body"><span class="t1">'+esc(e.pj)+'</span>'+
       '<span class="t2"><span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span>'+
       '<span class="gtag '+gClass(e.cat)+'">'+gLabel(e.cat)+'</span>'+esc(catShort(e.cat))+
@@ -2133,9 +2197,15 @@ function renderEntries(box, list){
 
 /* ═══════ シート ═══════ */
 const sheet=document.getElementById('sheet'),sheetIn=document.getElementById('sheetIn');
-function openSheet(html){sheetIn.dataset.view='';sheetIn.innerHTML='<div class="grip"></div>'+html;sheet.classList.add('on');}
-function closeSheet(){sheet.classList.remove('on');sheetIn.dataset.view='';}
-sheet.onclick=e=>{if(e.target===sheet)closeSheet();};
+function openSheet(html,wide){
+  sheetIn.dataset.view='';
+  sheetIn.classList.toggle('wide',!!wide);
+  sheetIn.innerHTML='<button class="sheet-x" onclick="closeSheet()" title="閉じる" aria-label="閉じる">×</button><div class="grip"></div>'+html;
+  sheet.classList.add('on');
+}
+function closeSheet(){sheet.classList.remove('on');sheetIn.dataset.view='';sheetIn.classList.remove('wide');}
+/* v1.52.1：画面の外側を触っても閉じない（PC・スマホとも）。閉じる・戻るはボタンだけで行う */
+sheet.onclick=null;
 
 
 /* ═══════ 実績の編集 ═══════ */
@@ -2317,9 +2387,57 @@ function withOutlookSendLock(fn){
 // Outlookのリンクは別ウィンドウで開く（アプリ自体を移動させない）。
 // ホーム画面追加アプリでlocation.hrefを使うと、iPhoneでOutlookアプリへの受け渡しと
 // 自アプリ内でのページ遷移が両方発生し、画面が二重に残って二重登録につながることがあるため。
-function openOutlookUrl(url){
-  const w=window.open(url,'_blank');
-  if(!w){ location.href=url; } // ポップアップブロック等でwindow.openが失敗した場合のみ従来方式にフォールバック
+/* v1.53.0：Outlookが立ち上がらなかったときの予備手段
+   送信の動きは従来どおり window.open。開けたかどうかは「この画面が裏に回ったか」で判定する
+   （Outlookアプリや新しいタブへ切り替われば visibilitychange/blur が起きる）。
+   約1.5秒たっても前面のまま、または window.open が止められたときだけ予備シートを出す。 */
+let _olUrl='', _olRevert=null, _olLeft=false, _olTimer=null, _olFbLock=false;
+function _olMarkLeft(){ _olLeft=true; }
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) _olMarkLeft(); });
+window.addEventListener('blur',_olMarkLeft);
+window.addEventListener('pagehide',_olMarkLeft);
+function openOutlookUrl(url,revert){
+  _olUrl=url; _olRevert=revert||null; _olLeft=false;
+  clearTimeout(_olTimer);
+  let w=null;
+  try{ w=window.open(url,'_blank'); }catch(err){ w=null; }
+  if(!w){ outlookFallbackSheet(); return; }   // 止められた → すぐ予備シート
+  _olTimer=setTimeout(()=>{ if(!_olLeft && !document.hidden) outlookFallbackSheet(); },1500);
+}
+function outlookFallbackSheet(){
+  if(!_olUrl) return;
+  let h='<h3>Outlookが開きませんでした</h3>';
+  h+='<div class="note" style="margin-top:0">下のボタンを押すと、入力済みの予定作成画面が開きます。Outlookで「保存」を押せば予定表に入ります。</div>';
+  h+='<a class="closebtn done" id="olOpenBtn" style="display:block;text-align:center;text-decoration:none;margin-top:6px;box-sizing:border-box" href="'+esc(_olUrl)+'" target="_blank" rel="noopener" onclick="return olFbOpen(event)">Outlookで開く →</a>';
+  h+='<div class="note">それでも開かないときは、リンクをコピーしてSafariのアドレス欄に貼り付けて開いてください。</div>';
+  h+='<button class="closebtn" style="margin-top:0" onclick="olCopy()">リンクをコピー</button>';
+  if(_olRevert) h+='<button class="closebtn" onclick="olRevert()">送れなかった（未送信に戻す）</button>';
+  h+='<button class="closebtn" onclick="closeSheet()">閉じる</button>';
+  openSheet(h);
+}
+/* 予備ボタン：リンクを直接開く（処理を挟まない）。連打による二重登録だけ防ぐ */
+function olFbOpen(ev){
+  if(_olFbLock){ if(ev) ev.preventDefault(); return false; }
+  _olFbLock=true; setTimeout(()=>{_olFbLock=false;},2000);
+  setTimeout(closeSheet,300);
+  return true;
+}
+function olCopy(){
+  const done=()=>toast('リンクをコピーしました。Safariに貼り付けて開いてください');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(_olUrl).then(done,()=>olCopyOld(done));
+  }else olCopyOld(done);
+}
+function olCopyOld(done){
+  const ta=document.createElement('textarea'); ta.value=_olUrl; ta.setAttribute('readonly','');
+  ta.style.position='fixed'; ta.style.top='-1000px'; document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0,ta.value.length);
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  ta.remove(); ok?done():toast('コピーできませんでした');
+}
+function olRevert(){
+  if(_olRevert){ _olRevert(); _olRevert=null; }
+  closeSheet(); toast('未送信に戻しました');
 }
 async function sendToCalendar(list){
   if(list.length===0) return;
@@ -2330,7 +2448,7 @@ async function sendToCalendar(list){
     withOutlookSendLock(()=>{
       e.sent=true;save();render();
       if(rest>0) toast('残り'+rest+'件。戻ってもう一度押してください');
-      openOutlookUrl(outlookUrl(e));
+      openOutlookUrl(outlookUrl(e),()=>{ e.sent=false; save(); render(); });
     });
     return;
   }
@@ -2404,7 +2522,7 @@ function onBackupPicked(el){
     let add=0;
     st.entries.forEach(e=>{ if(!have[key(e)]){ S.entries.push(e); have[key(e)]=1; add++; } });
     S.entries.sort((a,b)=>a.start-b.start);
-    let addPj=0, addCat=0;
+    let addPj=0;
     (st.projects||[]).forEach(x=>{
       const n=(typeof x==='string')?x:((x&&x.n)||'');
       if(!n) return;
@@ -2426,10 +2544,10 @@ function onBackupPicked(el){
         if(fav) o.fav=true;
       }
     });
-    // 業務分類は固定（v1.44.0）。バックアップに入っていても取り込まない
+    // v1.54.0：業務分類の追加は廃止したため、バックアップからも増やさない
     if(st.mtxSent) Object.keys(st.mtxSent).forEach(k=>{ if(!S.mtxSent[k]) S.mtxSent[k]=st.mtxSent[k]; });
     save(); render();
-    toast('取り込みました（記録 +'+add+'件／PJ +'+addPj+'／分類 +'+addCat+'）');
+    toast('取り込みました（記録 +'+add+'件／PJ +'+addPj+'）');
     closeSheet();
   };
   r.readAsText(f);
@@ -2440,11 +2558,21 @@ document.getElementById('cfgBtn').onclick=cfgOpen;
 function cfgOpen(){
   let h='<h3>設定</h3>';
 
-  h+='<h2 style="margin-top:4px">業務分類（13件・固定）</h2>';
-  S.cats.forEach(c=>{
-    h+='<div class="listrow card '+gClass(c.n)+'"><span class="gtag big">'+gLabel(c.n)+'</span><span class="nm big">'+esc(catShort(c.n))+'</span>'+
-       '<span class="vtag '+VCLASS[c.v]+'">'+VLABEL[c.v]+'</span></div>';
+  h+='<h2 style="margin-top:4px">表示</h2>';
+  h+='<select onchange="setView(this.value)">'+
+     [['auto','自動（画面の幅で切り替え）'],['sp','スマホ表示'],['pc','PC表示']].map(x=>'<option value="'+x[0]+'"'+(S.view===x[0]?' selected':'')+'>'+x[1]+'</option>').join('')+
+     '</select>';
+
+  h+='<h2 style="margin-top:14px">業務分類</h2>';
+  h+='<div class="note" style="margin-top:0">名前をタップで変更（過去の記録と★も新しい名前にそろえます）。業務分類の追加・削除はできません。</div>';
+  S.cats.forEach((c,i)=>{
+    h+='<div class="listrow card '+gClass(c.n)+'"><span class="gtag big">'+gLabel(c.n)+'</span>'+
+       '<span class="nm big edit" onclick="renCat('+i+')" title="名前を変更">'+esc(catShort(c.n))+'</span>'+
+       '<select onchange="setV('+i+',this.value)" style="width:auto;margin:0;padding:6px 8px;font-size:12px">'+
+       ['add','keep','waste'].map(v=>'<option value="'+v+'"'+(c.v===v?' selected':'')+'>'+VLABEL[v]+'</option>').join('')+
+       '</select></div>';
   });
+  h+='<button class="mini" style="width:100%;margin-top:6px" onclick="resetCats()">業務分類を標準セット（13件）に入れ替える</button>';
   h+='<h2 style="margin-top:16px">PJ一覧</h2>';
   S.projects.forEach((p,i)=>{
     const k=kindOf(p), f=isFavPj(p);
@@ -2486,6 +2614,38 @@ function cfgOpen(){
   h+='<button class="closebtn done" onclick="closeSheet()">閉じる</button>';
   openSheet(h);
 }
+/* ── 業務分類の編集（v1.52.0で復活） ── */
+function catExists(n,skip){ return S.cats.some((c,j)=>j!==skip&&c.n===n); }
+/* v1.54.0：業務分類の追加・削除は廃止（名前の変更・価値区分の変更・標準セットへの入れ替えのみ） */
+function renCat(i){
+  const c=S.cats[i]; if(!c) return;
+  const v=(prompt('業務分類の新しい名前',c.n)||'').trim();
+  if(!v||v===c.n) return;
+  if(catExists(v,i)){ toast('同じ名前の業務分類があります'); return; }
+  const n=(S.entries||[]).filter(e=>e&&e.cat===c.n).length;
+  if(n&&!confirm('「'+c.n+'」→「'+v+'」に変更します。\nこの分類の記録 '+n+'件も新しい名前にそろえます（Outlookへ送信済みの予定は変わりません）。よろしいですか？')) return;
+  const old=c.n; c.n=v;
+  (S.entries||[]).forEach(e=>{ if(e&&e.cat===old) e.cat=v; });
+  if(S.running&&S.running.cat===old) S.running.cat=v;
+  (S.favs||[]).forEach((k,j)=>{ const kp=String(k).split(FSEP); if(kp.length>=2&&kp[1]===old){ kp[1]=v; S.favs[j]=kp.join(FSEP); } });
+  save(); cfgOpen(); render(); toast('名前を変更しました');
+}
+function setV(i,v){ if(!S.cats[i]) return; S.cats[i].v=v; save(); cfgOpen(); render(); }
+function resetCats(){
+  if(!confirm('業務分類を標準の13件に入れ替えます。\n自分で追加・変更した分類は一覧から消えますが、記録済みの工数は消えません。よろしいですか？')) return;
+  S.cats=JSON.parse(JSON.stringify(CATS)); pruneFavs();
+  save(); cfgOpen(); render(); toast('業務分類を標準セットに入れ替えました');
+}
+/* ── 表示の切り替え（v1.52.0）：自動は 幅900px以上かつマウス操作の端末でPC表示 ── */
+function isPC(){
+  if(S.view==='pc') return true;
+  if(S.view==='sp') return false;
+  return window.innerWidth>=900 && !(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches);
+}
+function applyView(){ document.documentElement.classList.toggle('pc',isPC()); }
+function setView(v){ S.view=v; save(); applyView(); cfgOpen(); }
+window.addEventListener('resize',applyView);
+applyView();
 function setAlert(v){S.alertMin=parseInt(v,10)||60;_alerted=false;save();render();}
 function setWorkH(v){S.workH=parseFloat(v)||8;save();cfgOpen();}
 function setVhTarget(v){S.vhTarget=parseInt(v,10)||50;save();cfgOpen();}
